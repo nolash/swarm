@@ -111,54 +111,7 @@ func (p *Pusher) sync() {
 	for {
 		select {
 
-		// handle incoming chunks
-		case ch, more := <-chunks:
-			chunksInBatch++
-			// if no more, set to nil and wait for timer
-			if !more {
-				chunks = nil
-				continue
-			}
-
-			metrics.GetOrRegisterCounter("pusher.send-chunk", nil).Inc(1)
-			// if no need to sync this chunk then continue
-			if !p.needToSync(ch) {
-				continue
-			}
-
-			metrics.GetOrRegisterCounter("pusher.send-chunk.send-to-sync", nil).Inc(1)
-			// send the chunk and ignore the error
-			if err := p.sendChunkMsg(ch); err != nil {
-				log.Error("error sending chunk", "addr", ch.Address(), "err", err)
-			}
-
-			// handle incoming receipts
-		case addr := <-p.receipts:
-			metrics.GetOrRegisterCounter("pusher.receipts.all", nil).Inc(1)
-			log.Debug("synced", "addr", addr)
-			// ignore if already received receipt
-			item, found := p.pushed[addr.Hex()]
-			if !found {
-				metrics.GetOrRegisterCounter("pusher.receipts.not-found", nil).Inc(1)
-				log.Debug("not wanted or already got... ignore", "addr", addr)
-				continue
-			}
-			if item.synced {
-				metrics.GetOrRegisterCounter("pusher.receipts.already-synced", nil).Inc(1)
-				log.Debug("just synced... ignore", "addr", addr)
-				continue
-			}
-			metrics.GetOrRegisterCounter("pusher.receipts.synced", nil).Inc(1)
-			// collect synced addresses
-			synced = append(synced, addr)
-			// set synced flag
-			item.synced = true
-			// increment synced count for the tag if exists
-			if item.tag != nil {
-				item.tag.Inc(chunk.StateSynced)
-			}
-
-			// retry interval timer triggers starting from new
+		// retry interval timer triggers starting from new
 		case <-timer.C:
 			metrics.GetOrRegisterCounter("pusher.subscribe-push", nil).Inc(1)
 			// TODO: implement some smart retry strategy relying on sent/synced ratio change
@@ -193,6 +146,53 @@ func (p *Pusher) sync() {
 			chunks, stop = p.store.SubscribePush(ctx)
 			// reset timer to go off after retryInterval
 			timer.Reset(retryInterval)
+
+		// handle incoming chunks
+		case ch, more := <-chunks:
+			chunksInBatch++
+			// if no more, set to nil and wait for timer
+			if !more {
+				chunks = nil
+				continue
+			}
+
+			metrics.GetOrRegisterCounter("pusher.send-chunk", nil).Inc(1)
+			// if no need to sync this chunk then continue
+			if !p.needToSync(ch) {
+				continue
+			}
+
+			metrics.GetOrRegisterCounter("pusher.send-chunk.send-to-sync", nil).Inc(1)
+			// send the chunk and ignore the error
+			if err := p.sendChunkMsg(ch); err != nil {
+				log.Error("error sending chunk", "addr", ch.Address(), "err", err)
+			}
+
+		// handle incoming receipts
+		case addr := <-p.receipts:
+			metrics.GetOrRegisterCounter("pusher.receipts.all", nil).Inc(1)
+			log.Debug("synced", "addr", addr)
+			// ignore if already received receipt
+			item, found := p.pushed[addr.Hex()]
+			if !found {
+				metrics.GetOrRegisterCounter("pusher.receipts.not-found", nil).Inc(1)
+				log.Debug("not wanted or already got... ignore", "addr", addr)
+				continue
+			}
+			if item.synced {
+				metrics.GetOrRegisterCounter("pusher.receipts.already-synced", nil).Inc(1)
+				log.Debug("just synced... ignore", "addr", addr)
+				continue
+			}
+			metrics.GetOrRegisterCounter("pusher.receipts.synced", nil).Inc(1)
+			// collect synced addresses
+			synced = append(synced, addr)
+			// set synced flag
+			item.synced = true
+			// increment synced count for the tag if exists
+			if item.tag != nil {
+				item.tag.Inc(chunk.StateSynced)
+			}
 
 		case <-p.quit:
 			// if there was a subscription, cancel it

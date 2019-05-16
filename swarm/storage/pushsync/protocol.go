@@ -40,7 +40,7 @@ type PubSub interface {
 type chunkMsg struct {
 	Addr   []byte // chunk address
 	Data   []byte // chunk data
-	Origin []byte // originator
+	Origin []byte // originator - need this for sending receipt back to origin
 	Nonce  []byte // nonce to make multiple instances of send immune to deduplication cache
 }
 
