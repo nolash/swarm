@@ -219,6 +219,7 @@ func (r *Registry) RequestSubscription(peerId enode.ID, s Stream, h *Range, prio
 // Subscribe initiates the streamer
 func (r *Registry) Subscribe(peerId enode.ID, s Stream, h *Range, priority uint8) error {
 	// check if the stream is registered
+	//s.Live is always true!!!
 	if _, err := r.GetClientFunc(s.Name); err != nil {
 		return err
 	}
@@ -229,15 +230,18 @@ func (r *Registry) Subscribe(peerId enode.ID, s Stream, h *Range, priority uint8
 	}
 
 	var to uint64
-	if !s.Live && h != nil {
+	// this never happens
+	/*if !s.Live && h != nil {
+		log.Error("never")
 		to = h.To
-	}
+	}*/
 
-	err := peer.setClientParams(s, newClientParams(priority, to))
+	err := peer.setClientParams(s, newClientParams(priority, to)) //always invoked
 	if err != nil {
 		return err
 	}
 	if s.Live && h != nil {
+		// this is always invoked
 		if err := peer.setClientParams(
 			getHistoryStream(s),
 			newClientParams(getHistoryPriority(priority), h.To),
@@ -475,6 +479,7 @@ type server struct {
 // stream is live or history. It calls Server SetNextBatch with adjusted
 // interval and returns batch hashes and their interval.
 func (s *server) setNextBatch(from, to uint64) ([]byte, uint64, uint64, *HandoverProof, error) {
+	log.Debug("server.setNextBatch", "from", from, "to", to, "sessionIdx", s.sessionIndex)
 	if s.stream.Live {
 		if from == 0 {
 			from = s.sessionIndex
@@ -550,14 +555,20 @@ type Client interface {
 
 func (c *client) nextBatch(from uint64) (nextFrom uint64, nextTo uint64) {
 	if c.to > 0 && from >= c.to {
+		log.Debug("ret 0 0")
 		return 0, 0
 	}
 	if c.stream.Live {
+		log.Debug("ret live")
 		return from, 0
 	} else if from >= c.sessionAt {
+		log.Debug("ret hist, from >= sessionAt", "from", from, "sessionAt", c.sessionAt)
+		return from, 0
 		if c.to > 0 {
+			log.Debug("ret c.to>0", "from", from, "c.to", c.to)
 			return from, c.to
 		}
+		log.Debug("ret from : maxint", "from", from)
 		return from, math.MaxUint64
 	}
 	nextFrom, nextTo, err := c.NextInterval()
@@ -565,10 +576,13 @@ func (c *client) nextBatch(from uint64) (nextFrom uint64, nextTo uint64) {
 		log.Error("next intervals", "stream", c.stream)
 		return
 	}
+	log.Debug("got from NextInterval", "nextFrom", nextFrom, "nextTo", nextTo)
 	if nextTo > c.to {
+		log.Debug("nextTo > c.to, setting nextTo to c.to", "nextTo", nextTo, "c.to", c.to)
 		nextTo = c.to
 	}
 	if nextTo == 0 {
+		log.Debug("nextTo == 0, setting nextTo to session index", c.sessionAt)
 		nextTo = c.sessionAt
 	}
 	return

@@ -19,6 +19,7 @@ package localstore
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"testing"
@@ -403,11 +404,18 @@ func uploadRandomChunksBin(t *testing.T, db *DB, addrs map[uint8][]chunk.Address
 // returned by the channel.
 func readPullSubscriptionBin(ctx context.Context, db *DB, bin uint8, ch <-chan chunk.Descriptor, addrs map[uint8][]chunk.Address, addrsMu *sync.Mutex, errChan chan error) {
 	var i int // address index
+	seen := make(map[string]int)
 	for {
 		select {
 		case got, ok := <-ch:
 			if !ok {
 				return
+			}
+			n, ok := seen[hex.EncodeToString(got.Address)]
+			if ok {
+				panic("w00t")
+			} else {
+				seen[hex.EncodeToString(got.Address)] = n + 1
 			}
 			var err error
 			addrsMu.Lock()

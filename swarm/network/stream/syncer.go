@@ -18,6 +18,7 @@ package stream
 
 import (
 	"context"
+	"encoding/hex"
 	"strconv"
 	"time"
 
@@ -39,6 +40,7 @@ type SwarmSyncerServer struct {
 	correlateId string //used for logging
 	po          uint8
 	netStore    *storage.NetStore
+	sent        map[string]int
 	quit        chan struct{}
 }
 
@@ -48,6 +50,7 @@ func NewSwarmSyncerServer(po uint8, netStore *storage.NetStore, correlateId stri
 		correlateId: correlateId,
 		po:          po,
 		netStore:    netStore,
+		sent:        make(map[string]int),
 		quit:        make(chan struct{}),
 	}, nil
 }
@@ -93,12 +96,9 @@ func (s *SwarmSyncerServer) SessionIndex() (uint64, error) {
 // will block until new chunks are received from localstore pull subscription.
 func (s *SwarmSyncerServer) SetNextBatch(from, to uint64) ([]byte, uint64, uint64, *HandoverProof, error) {
 	//TODO: maybe add unit test for intervals usage in netstore/localstore together with SwarmSyncerServer?
-	log.Debug("syncer.SetNextBatch", "from", from, "to", to)
 	//if from > 0 {
 	//	from--
-	//}
-
-	log.Debug("syncer.SetNextBatch", "from", from, "to", to)
+	//	}
 	batchStart := time.Now()
 	descriptors, stop := s.netStore.SubscribePull(context.Background(), s.po, from, to)
 	defer stop()
@@ -128,6 +128,13 @@ func (s *SwarmSyncerServer) SetNextBatch(from, to uint64) ([]byte, uint64, uint6
 			if !ok {
 				iterate = false
 				break
+			}
+
+			n, ok := s.sent[hex.EncodeToString(d.Address)]
+			if ok {
+				log.Error("already sent chunk!", "address", d.Address, "count", n)
+			} else {
+				s.sent[hex.EncodeToString(d.Address)] = n + 1
 			}
 			batch = append(batch, d.Address[:]...)
 			// This is the most naive approach to label the chunk as synced
@@ -206,6 +213,7 @@ func RegisterSwarmSyncerClient(streamer *Registry, netStore *storage.NetStore) {
 
 // NeedData
 func (s *SwarmSyncerClient) NeedData(ctx context.Context, key []byte) (wait func(context.Context) error) {
+	log.Debug("syncerClient.NeedData", "key", hex.EncodeToString(key))
 	return s.netStore.FetchFunc(ctx, key)
 }
 

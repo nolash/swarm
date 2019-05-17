@@ -329,8 +329,8 @@ func TestTwoNodesFullSync(t *testing.T) { //
 	sim := simulation.New(map[string]simulation.ServiceFunc{
 		"streamer": func(ctx *adapters.ServiceContext, bucket *sync.Map) (s node.Service, cleanup func(), err error) {
 			addr := network.NewAddr(ctx.Config.Node())
-			//hack to put addresses in same space
-			addr.OAddr[0] = byte(0) //wtf is this?
+			//			//hack to put addresses in same space
+			//			addr.OAddr[0] = byte(0) //wtf is this?
 
 			netStore, delivery, clean, err := newNetStoreAndDeliveryWithBzzAddr(ctx, bucket, addr)
 			if err != nil {

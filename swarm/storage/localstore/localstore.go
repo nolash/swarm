@@ -18,6 +18,7 @@ package localstore
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
@@ -131,6 +132,7 @@ type Options struct {
 // and possible conflicts with schema from existing database is checked.
 // One goroutine for writing batches is created.
 func New(path string, baseKey []byte, o *Options) (db *DB, err error) {
+	log.Debug("creating localstore", "chunkDbPath", path, "baseKey", hex.EncodeToString(baseKey))
 	if o == nil {
 		// default options
 		o = &Options{

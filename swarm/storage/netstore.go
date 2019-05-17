@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -85,6 +86,8 @@ func (n *NetStore) Put(ctx context.Context, mode chunk.ModePut, ch Chunk) (bool,
 	if err != nil {
 		return exists, err
 	}
+
+	log.Debug("netstore put", "exists", exists, "chunk.Address", hex.EncodeToString(ch.Address()[:]))
 
 	// if chunk is now put in the store, check if there was an active fetcher and call deliver on it
 	// (this delivers the chunk to requestors via the fetcher)
@@ -308,8 +311,11 @@ func (f *fetcher) Fetch(rctx context.Context) (Chunk, error) {
 		if err := source.UnmarshalText([]byte(sourceIF.(string))); err != nil {
 			return nil, err
 		}
+		debug.PrintStack()
+		log.Error("hitting the OFFER", "caddr", hex.EncodeToString(f.addr), "source", source)
 		f.netFetcher.Offer(&source)
 	} else {
+		log.Error("hitting the REQUEST")
 		f.netFetcher.Request(hopCount)
 	}
 

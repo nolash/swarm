@@ -18,11 +18,13 @@ package localstore
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/swarm/chunk"
+	"github.com/ethereum/go-ethereum/swarm/log"
 	"github.com/ethereum/go-ethereum/swarm/shed"
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -50,6 +52,7 @@ func (db *DB) Put(ctx context.Context, mode chunk.ModePut, ch chunk.Chunk) (exis
 // Item fields Address and Data must not be
 // with their nil values.
 func (db *DB) put(mode chunk.ModePut, item shed.Item) (exists bool, err error) {
+	log.Error("localstore.put", "chunkAddress", hex.EncodeToString(item.Address), "basekey", hex.EncodeToString(db.baseKey))
 	// protect parallel updates
 	db.batchMu.Lock()
 	defer db.batchMu.Unlock()
@@ -82,6 +85,9 @@ func (db *DB) put(mode chunk.ModePut, item shed.Item) (exists bool, err error) {
 		i, err = db.retrievalDataIndex.Get(item)
 		switch err {
 		case nil:
+			if exists {
+				log.Error("CHUNK ALREADY EXISTS - MODE PUT REQ", "baseKey", hex.EncodeToString(db.baseKey))
+			}
 			exists = true
 			item.StoreTimestamp = i.StoreTimestamp
 			item.BinID = i.BinID
@@ -122,6 +128,9 @@ func (db *DB) put(mode chunk.ModePut, item shed.Item) (exists bool, err error) {
 		if err != nil {
 			return false, err
 		}
+		if exists {
+			log.Error("CHUNK ALREADY EXISTS - MODE PUT UPLOAD", "baseKey", hex.EncodeToString(db.baseKey))
+		}
 		if !exists {
 			item.StoreTimestamp = now()
 			item.BinID, err = db.binIDs.IncInBatch(batch, uint64(db.po(item.Address)))
@@ -141,6 +150,9 @@ func (db *DB) put(mode chunk.ModePut, item shed.Item) (exists bool, err error) {
 		exists, err = db.retrievalDataIndex.Has(item)
 		if err != nil {
 			return exists, err
+		}
+		if exists {
+			log.Error("CHUNK ALREADY EXISTS - MODE PUT SYNC", "baseKey", hex.EncodeToString(db.baseKey))
 		}
 		if !exists {
 			item.StoreTimestamp = now()

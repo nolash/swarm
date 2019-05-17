@@ -160,7 +160,6 @@ func NewSwarm(config *api.Config, mockStore *mock.NodeStore) (self *Swarm, err e
 	fhParams := &feed.HandlerParams{}
 
 	feedsHandler = feed.NewHandler(fhParams)
-
 	localStore, err := localstore.New(config.ChunkDbPath, config.BaseKey, &localstore.Options{
 		MockStore: mockStore,
 		Capacity:  config.DbCapacity,

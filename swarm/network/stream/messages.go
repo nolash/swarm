@@ -278,7 +278,7 @@ func (p *Peer) handleOfferedHashesMsg(ctx context.Context, req *OfferedHashesMsg
 		c.sessionAt = req.From
 	}
 	from, to := c.nextBatch(req.To + 1)
-	log.Trace("set next batch", "peer", p.ID(), "stream", req.Stream, "from", req.From, "to", req.To, "addr", p.streamer.addr)
+	log.Trace("set next batch", "peer", p.ID(), "stream", req.Stream, "from", from, "to", to, "req.From", req.From, "req.To", req.To, "addr", p.streamer.addr)
 	if from == to {
 		return nil
 	}
@@ -305,7 +305,6 @@ func (p *Peer) handleOfferedHashesMsg(ctx context.Context, req *OfferedHashesMsg
 		log.Debug("client.handleOfferedHashesMsg() context done", "ctx.Err()", ctx.Err())
 		return nil
 	}
-	log.Trace("sending want batch", "peer", p.ID(), "stream", msg.Stream, "from", msg.From, "to", msg.To)
 
 	// record want delay
 	if wantDelaySet {
