@@ -354,7 +354,13 @@ func doRequestSubscription(r *Registry, id enode.ID, bin uint8) error {
 	log.Debug("Requesting subscription by registry:", "registry", r.addr, "peer", id, "bin", bin)
 	// bin is always less then 256 and it is safe to convert it to type uint8
 	stream := NewStream("SYNC", FormatSyncBinKey(bin), true)
-	err := r.RequestSubscription(id, stream, NewRange(0, 0), High)
+	binID, err := r.delivery.netStore.LastPullSubscriptionBinID(bin)
+	if err != nil {
+		log.Error("error getting bin id for bin", "bin", bin, "err", err)
+		return err
+	}
+	err = r.RequestSubscription(id, stream, NewRange(0, binID), High)
+	//err = r.RequestSubscription(id, stream, NewRange(0, 0), High)
 	if err != nil {
 		log.Debug("Request subscription", "err", err, "peer", id, "stream", stream)
 		return err
