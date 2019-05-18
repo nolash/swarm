@@ -131,6 +131,7 @@ func (p *Peer) handleSubscribeMsg(ctx context.Context, req *SubscribeMsg) (err e
 	}()
 
 	if req.Stream.Live && req.History != nil {
+		log.Debug("creating history subscription", "from", p.streamer.addr, "peer", p.ID(), "stream", req.Stream, "history", req.History)
 		// subscribe to the history stream
 		s, err := f(p, req.Stream.Key, false)
 		if err != nil {
