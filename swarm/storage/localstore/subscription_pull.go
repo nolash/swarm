@@ -17,8 +17,12 @@
 package localstore
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"runtime"
+	"strconv"
 	"sync"
 	"time"
 
@@ -26,8 +30,18 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/swarm/chunk"
 	"github.com/ethereum/go-ethereum/swarm/shed"
+	"github.com/pborman/uuid"
 	"github.com/syndtr/goleveldb/leveldb"
 )
+
+func getGID() uint64 {
+	b := make([]byte, 64)
+	b = b[:runtime.Stack(b, false)]
+	b = bytes.TrimPrefix(b, []byte("goroutine "))
+	b = b[:bytes.IndexByte(b, ' ')]
+	n, _ := strconv.ParseUint(string(b), 10, 64)
+	return n
+}
 
 // SubscribePull returns a channel that provides chunk addresses and stored times from pull syncing index.
 // Pull syncing index can be only subscribed to a particular proximity order bin. If since
@@ -38,6 +52,7 @@ import (
 // Make sure that you check the second returned parameter from the channel to stop iteration when its value
 // is false.
 func (db *DB) SubscribePull(ctx context.Context, bin uint8, since, until uint64) (c <-chan chunk.Descriptor, stop func()) {
+	log.Warn("db.subscribepull", "po", bin, "since", since, "until", until)
 	metricName := "localstore.SubscribePull"
 	metrics.GetOrRegisterCounter(metricName, nil).Inc(1)
 
@@ -62,6 +77,8 @@ func (db *DB) SubscribePull(ctx context.Context, bin uint8, since, until uint64)
 	var errStopSubscription = errors.New("stop subscription")
 
 	go func() {
+		gid := uuid.New()
+
 		defer metrics.GetOrRegisterCounter(metricName+".stop", nil).Inc(1)
 		// close the returned chunk.Descriptor channel at the end to
 		// signal that the subscription is done
@@ -75,10 +92,16 @@ func (db *DB) SubscribePull(ctx context.Context, bin uint8, since, until uint64)
 				BinID:   since,
 			}
 		}
+
 		first := true // first iteration flag for SkipStartFromItem
+		log.Warn("db.subscribepull first is true", "po", bin, "since", since, "until", until, "gid", gid)
 		for {
 			select {
 			case <-trigger:
+				log.Warn("trigger", "po", bin, "since", since, "until", until, "gid", gid)
+				if sinceItem != nil {
+					log.Warn("since item", "binid", sinceItem.BinID, "gid", gid)
+				}
 				// iterate until:
 				// - last index Item is reached
 				// - subscription stop is called
@@ -93,6 +116,7 @@ func (db *DB) SubscribePull(ctx context.Context, bin uint8, since, until uint64)
 						Address: item.Address,
 						BinID:   item.BinID,
 					}:
+						log.Warn("chunk in sp", "po", bin, "since", since, "until", until, "gid", gid, "ref", fmt.Sprintf("%x", item.Address), "binid", item.BinID)
 						count++
 						// until chunk descriptor is sent
 						// break the iteration
@@ -104,14 +128,17 @@ func (db *DB) SubscribePull(ctx context.Context, bin uint8, since, until uint64)
 						sinceItem = &item
 						return false, nil
 					case <-stopChan:
+						log.Trace("interleaving 11", "po", bin)
 						// gracefully stop the iteration
 						// on stop
 						return true, nil
 					case <-db.close:
+						log.Trace("interleaving 22", "po", bin)
 						// gracefully stop the iteration
 						// on database close
 						return true, nil
 					case <-ctx.Done():
+						log.Trace("interleaving 33", "po", bin)
 						return true, ctx.Err()
 					}
 				}, &shed.IterateOptions{
@@ -139,17 +166,20 @@ func (db *DB) SubscribePull(ctx context.Context, bin uint8, since, until uint64)
 					first = false
 				}
 			case <-stopChan:
+				log.Trace("interleaving 1", "po", bin)
 				// terminate the subscription
 				// on stop
 				return
 			case <-db.close:
+				log.Trace("interleaving 2", "po", bin)
 				// terminate the subscription
 				// on database close
 				return
 			case <-ctx.Done():
+				log.Trace("interleaving 3", "po", bin)
 				err := ctx.Err()
 				if err != nil {
-					log.Error("localstore pull subscription", "bin", bin, "since", since, "until", until, "err", err)
+					log.Error("localstore pull subscription", "po", bin, "since", since, "until", until, "err", err)
 				}
 				return
 			}
@@ -196,6 +226,7 @@ func (db *DB) LastPullSubscriptionBinID(bin uint8) (id uint64, err error) {
 // that is in particular bin for DB's baseKey is added to pull index
 // this function should be called.
 func (db *DB) triggerPullSubscriptions(bin uint8) {
+	log.Warn("db.trigger pull subscription", "bin", bin)
 	db.pullTriggersMu.RLock()
 	triggers, ok := db.pullTriggers[bin]
 	db.pullTriggersMu.RUnlock()

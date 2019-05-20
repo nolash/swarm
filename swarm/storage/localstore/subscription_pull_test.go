@@ -20,10 +20,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/swarm/chunk"
 	"github.com/ethereum/go-ethereum/swarm/shed"
 )
@@ -82,6 +84,10 @@ func TestDB_SubscribePull_first(t *testing.T) {
 // all addresses are received in the right order
 // for expected proximity order bins.
 func TestDB_SubscribePull(t *testing.T) {
+
+	log.PrintOrigins(true)
+	log.Root().SetHandler(log.LvlFilterHandler(log.Lvl(5), log.StreamHandler(os.Stdout, log.TerminalFormat(false))))
+
 	db, cleanupFunc := newTestDB(t, nil)
 	defer cleanupFunc()
 
@@ -91,7 +97,7 @@ func TestDB_SubscribePull(t *testing.T) {
 
 	// prepopulate database with some chunks
 	// before the subscription
-	uploadRandomChunksBin(t, db, addrs, &addrsMu, &wantedChunksCount, 10)
+	uploadRandomChunksBin(t, db, addrs, &addrsMu, &wantedChunksCount, 4)
 
 	// set a timeout on subscription
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -110,7 +116,7 @@ func TestDB_SubscribePull(t *testing.T) {
 	}
 
 	// upload some chunks just after subscribe
-	uploadRandomChunksBin(t, db, addrs, &addrsMu, &wantedChunksCount, 5)
+	uploadRandomChunksBin(t, db, addrs, &addrsMu, &wantedChunksCount, 4)
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -440,24 +446,29 @@ func uploadRandomChunksBin(t *testing.T, db *DB, addrs map[uint8][]chunk.Address
 		bin := db.po(ch.Address())
 		if _, ok := addrs[bin]; !ok {
 			addrs[bin] = make([]chunk.Address, 0)
+			addrs[bin] = append(addrs[bin], []byte{}) // empty chunk in index 0, so that we can easily compare bin id and index. bin id starts from 1.
 		}
 		addrs[bin] = append(addrs[bin], ch.Address())
 
+		//log.Warn("generating", "ref", ch.Address(), "po", bin, "binid", len(addrs[bin])-1)
+
 		*wantedChunksCount++
 	}
+
 }
 
 // readPullSubscriptionBin is a helper function that reads all chunk.Descriptors from a channel and
 // sends error to errChan, even if it is nil, to count the number of chunk.Descriptors
 // returned by the channel.
 func readPullSubscriptionBin(ctx context.Context, db *DB, bin uint8, ch <-chan chunk.Descriptor, addrs map[uint8][]chunk.Address, addrsMu *sync.Mutex, errChan chan error) {
-	var i int // address index
+	i := 1 // address index (and bin id)
 	for {
 		select {
 		case got, ok := <-ch:
 			if !ok {
 				return
 			}
+			log.Warn("got chunk", "ref", got.Address.Hex(), "po", got.BinID)
 			var err error
 			addrsMu.Lock()
 			if i+1 > len(addrs[bin]) {
@@ -465,16 +476,16 @@ func readPullSubscriptionBin(ctx context.Context, db *DB, bin uint8, ch <-chan c
 			} else {
 				addr := addrs[bin][i]
 				if !bytes.Equal(got.Address, addr) {
-					err = fmt.Errorf("got chunk bin id %v in bin %v %v, want %v", i, bin, got.Address.Hex(), addr.Hex())
+					err = fmt.Errorf("got chunk binid (i) %v in bin %v %v (got.BinID) %v, want %v", i, bin, got.Address.Hex(), got.BinID, addr.Hex())
 				} else {
 					want, err := db.retrievalDataIndex.Get(shed.Item{
 						Address: addr,
 					})
 					if err != nil {
-						err = fmt.Errorf("got chunk (bin id %v in bin %v) from retrieval index %s: %v", i, bin, addrs[bin][i].Hex(), err)
+						err = fmt.Errorf("got chunk (binid %v in bin %v) from retrieval index %s: %v", i, bin, addrs[bin][i].Hex(), err)
 					} else {
 						if got.BinID != want.BinID {
-							err = fmt.Errorf("got chunk bin id %v in bin %v %v, want %v", i, bin, got, want)
+							err = fmt.Errorf("got chunk binid %v in bin %v %v, want %v", i, bin, got, want)
 						}
 					}
 				}

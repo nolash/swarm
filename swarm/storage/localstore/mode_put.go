@@ -23,6 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/swarm/chunk"
+	"github.com/ethereum/go-ethereum/swarm/log"
 	"github.com/ethereum/go-ethereum/swarm/shed"
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -133,6 +134,8 @@ func (db *DB) put(mode chunk.ModePut, item shed.Item) (exists bool, err error) {
 			triggerPullFeed = true
 			db.pushIndex.PutInBatch(batch, item)
 			triggerPushFeed = true
+
+			log.Info("uploading chunk", "ref", fmt.Sprintf("%x", item.Address), "po", db.po(item.Address), "binid", item.BinID)
 		}
 
 	case chunk.ModePutSync:

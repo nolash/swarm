@@ -94,6 +94,8 @@ func (s *SwarmSyncerServer) SessionIndex() (uint64, error) {
 // will block until new chunks are received from localstore pull subscription.
 func (s *SwarmSyncerServer) SetNextBatch(from, to uint64) ([]byte, uint64, uint64, *HandoverProof, error) {
 	batchStart := time.Now()
+	log.Trace("syncer SetNextBatch", "from", from, "to", to, "po", s.po, "correlateId", s.correlateId)
+
 	descriptors, stop := s.netStore.SubscribePull(context.Background(), s.po, from, to)
 	defer stop()
 
@@ -123,6 +125,7 @@ func (s *SwarmSyncerServer) SetNextBatch(from, to uint64) ([]byte, uint64, uint6
 				iterate = false
 				break
 			}
+			log.Trace("chunk in set next batch", "ref", d.Address, "po", s.po, "binid", d.BinID)
 			batch = append(batch, d.Address[:]...)
 			// This is the most naive approach to label the chunk as synced
 			// allowing it to be garbage collected. A proper way requires
@@ -143,7 +146,7 @@ func (s *SwarmSyncerServer) SetNextBatch(from, to uint64) ([]byte, uint64, uint6
 			if batchSize >= BatchSize {
 				iterate = false
 				metrics.GetOrRegisterCounter("syncer.set-next-batch.full-batch", nil).Inc(1)
-				log.Trace("syncer pull subscription - batch size reached", "correlateId", s.correlateId, "batchSize", batchSize, "batchStartID", batchStartID, "batchEndID", batchEndID)
+				log.Trace("syncer pull subscription - batch size reached", "correlateId", s.correlateId, "batchSize", batchSize, "batchStartID", *batchStartID, "batchEndID", batchEndID)
 			}
 			if timer == nil {
 				timer = time.NewTimer(batchTimeout)
