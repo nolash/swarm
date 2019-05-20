@@ -354,13 +354,13 @@ func doRequestSubscription(r *Registry, id enode.ID, bin uint8) error {
 	log.Debug("Requesting subscription by registry:", "registry", r.addr, "peer", id, "bin", bin)
 	// bin is always less then 256 and it is safe to convert it to type uint8
 	stream := NewStream("SYNC", FormatSyncBinKey(bin), true)
-	binID, err := r.delivery.netStore.LastPullSubscriptionBinID(bin)
+	_, err := r.delivery.netStore.LastPullSubscriptionBinID(bin)
 	if err != nil {
 		log.Error("error getting bin id for bin", "bin", bin, "err", err)
 		return err
 	}
-	err = r.RequestSubscription(id, stream, NewRange(0, binID), High)
-	//err = r.RequestSubscription(id, stream, NewRange(0, 0), High)
+	//err = r.RequestSubscription(id, stream, NewRange(0, binID), High)
+	err = r.RequestSubscription(id, stream, NewRange(0, 0), High)
 	if err != nil {
 		log.Debug("Request subscription", "err", err, "peer", id, "stream", stream)
 		return err
@@ -485,7 +485,7 @@ type server struct {
 // stream is live or history. It calls Server SetNextBatch with adjusted
 // interval and returns batch hashes and their interval.
 func (s *server) setNextBatch(from, to uint64) ([]byte, uint64, uint64, *HandoverProof, error) {
-	log.Debug("server.setNextBatch", "from", from, "to", to, "sessionIdx", s.sessionIndex)
+	log.Debug("server.setNextBatch", "stream", s.stream, "from", from, "to", to, "sessionIdx", s.sessionIndex)
 	if s.stream.Live {
 		if from == 0 {
 			from = s.sessionIndex
@@ -494,6 +494,13 @@ func (s *server) setNextBatch(from, to uint64) ([]byte, uint64, uint64, *Handove
 			to = math.MaxUint64
 		}
 	} else {
+		// HISTORY
+		if s.sessionIndex == 0 {
+			// no need to sync any historical content when the sessionIndex is zero
+			log.Debug("no history to sync. quit")
+			return nil, 0, 0, nil, nil
+		}
+
 		if (to < from && to != 0) || from > s.sessionIndex {
 			return nil, 0, 0, nil, nil
 		}
@@ -560,6 +567,7 @@ type Client interface {
 }
 
 func (c *client) nextBatch(from uint64) (nextFrom uint64, nextTo uint64) {
+	log.Debug("client.nextBatch", "from", from, "c.sessionAt", c.sessionAt, "stream", c.stream)
 	if c.to > 0 && from >= c.to {
 		log.Debug("ret 0 0")
 		return 0, 0
@@ -569,7 +577,6 @@ func (c *client) nextBatch(from uint64) (nextFrom uint64, nextTo uint64) {
 		return from, 0
 	} else if from >= c.sessionAt {
 		log.Debug("ret hist, from >= sessionAt", "from", from, "sessionAt", c.sessionAt)
-		return from, 0
 		if c.to > 0 {
 			log.Debug("ret c.to>0", "from", from, "c.to", c.to)
 			return from, c.to

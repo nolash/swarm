@@ -59,6 +59,7 @@ type Peer struct {
 	*network.BzzPeer
 	streamer *Registry
 	pq       *pq.PriorityQueue
+	//setSessionAt *sync.Once //
 	serverMu sync.RWMutex
 	clientMu sync.RWMutex // protects both clients and clientParams
 	servers  map[Stream]*server

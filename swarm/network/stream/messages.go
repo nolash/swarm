@@ -120,11 +120,13 @@ func (p *Peer) handleSubscribeMsg(ctx context.Context, req *SubscribeMsg) (err e
 	var from uint64
 	var to uint64
 	if !req.Stream.Live && req.History != nil {
+		log.Error("check if this is hit")
 		from = req.History.From
 		to = req.History.To
 	}
 
 	go func() {
+		log.Error("sending first offered hashes for live stream", "os", os, "from", from, "to", to)
 		if err := p.SendOfferedHashes(os, from, to); err != nil {
 			log.Warn("SendOfferedHashes error", "peer", p.ID().TerminalString(), "err", err)
 		}
@@ -143,6 +145,7 @@ func (p *Peer) handleSubscribeMsg(ctx context.Context, req *SubscribeMsg) (err e
 			return err
 		}
 		go func() {
+			log.Error("sending first offered hashes for history stream", "os", os, "from", req.History.From, "to", req.History.To)
 			if err := p.SendOfferedHashes(os, req.History.From, req.History.To); err != nil {
 				log.Warn("SendOfferedHashes error", "peer", p.ID().TerminalString(), "err", err)
 			}
@@ -273,13 +276,14 @@ func (p *Peer) handleOfferedHashesMsg(ctx context.Context, req *OfferedHashesMsg
 			log.Debug("client.handleOfferedHashesMsg() context done", "ctx.Err()", ctx.Err())
 		}
 	}()
-	// only send wantedKeysMsg if all missing chunks of the previous batch arrived
-	// except
-	if c.stream.Live {
+
+	// only set the sessionAt once, when live sync and when the index = 0 (unset)
+	if c.stream.Live && c.sessionAt == 0 {
 		c.sessionAt = req.From
 	}
+
 	from, to := c.nextBatch(req.To + 1)
-	log.Trace("set next batch", "peer", p.ID(), "stream", req.Stream, "from", from, "to", to, "req.From", req.From, "req.To", req.To, "addr", p.streamer.addr)
+	log.Trace("client.handleOffered - set next batch", "peer", p.ID(), "stream", req.Stream, "from", from, "to", to, "req.From", req.From, "req.To", req.To, "addr", p.streamer.addr)
 	if from == to {
 		return nil
 	}
