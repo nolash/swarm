@@ -84,6 +84,8 @@ type Registry struct {
 	quit            chan struct{}     // terminates registry goroutines
 	syncMode        SyncingOption
 	syncUpdateDelay time.Duration
+
+	chunkBins *sync.Map
 }
 
 // RegistryOptions holds optional values for NewRegistry constructor.
@@ -118,6 +120,8 @@ func NewRegistry(localID enode.ID, delivery *Delivery, netStore *storage.NetStor
 		quit:            quit,
 		syncUpdateDelay: options.SyncUpdateDelay,
 		syncMode:        options.Syncing,
+
+		chunkBins: &sync.Map{},
 	}
 
 	streamer.setupSpec()

@@ -18,6 +18,7 @@ package stream
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -229,7 +230,17 @@ func (p *Peer) handleOfferedHashesMsg(ctx context.Context, req *OfferedHashesMsg
 	ctx = context.WithValue(ctx, "source", p.ID().String())
 	for i := 0; i < lenHashes; i += HashSize {
 		hash := hashes[i : i+HashSize]
-
+		v, ok := p.streamer.chunkBins.Load(hex.EncodeToString(hash))
+		if !ok {
+			log.Debug("chunk not seen", "hash", hex.EncodeToString(hash), "stream", c.stream)
+			p.streamer.chunkBins.Store(hex.EncodeToString(hash), []string{fmt.Sprintf("%s,from:%d,to:%d", c.stream.String(), req.From, req.To)})
+		} else {
+			valStr := v.([]string)
+			valStr = append(valStr, fmt.Sprintf("%s,from:%d,to:%d", c.stream.String(), req.From, req.To))
+			p.streamer.chunkBins.Store(hex.EncodeToString(hash), valStr)
+			log.Debug("chunk already seen", "hash", hex.EncodeToString(hash), "stream", valStr)
+		}
+		log.Trace("client.handleOfferedHashesMsg - calling NeedData", "peer", p.ID(), "stream", c.stream, "req.From", req.From, "req.To", req.To, "hash", hex.EncodeToString(hash))
 		if wait := c.NeedData(ctx, hash); wait != nil {
 			ctr++
 			want.Set(i/HashSize, true)
