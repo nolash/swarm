@@ -18,6 +18,7 @@ package localstore
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -123,6 +124,9 @@ func (db *DB) put(mode chunk.ModePut, item shed.Item) (exists bool, err error) {
 		if err != nil {
 			return false, err
 		}
+		if exists {
+			log.Error("CHUNK ALREADY EXISTS - MODE PUT UPLOAD", "baseKey", hex.EncodeToString(db.baseKey))
+		}
 		if !exists {
 			item.StoreTimestamp = now()
 			item.BinID, err = db.binIDs.IncInBatch(batch, uint64(db.po(item.Address)))
@@ -144,6 +148,9 @@ func (db *DB) put(mode chunk.ModePut, item shed.Item) (exists bool, err error) {
 		exists, err = db.retrievalDataIndex.Has(item)
 		if err != nil {
 			return exists, err
+		}
+		if exists {
+			log.Error("CHUNK ALREADY EXISTS - MODE PUT SYNC", "baseKey", hex.EncodeToString(db.baseKey))
 		}
 		if !exists {
 			item.StoreTimestamp = now()

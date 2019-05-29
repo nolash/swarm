@@ -84,26 +84,33 @@ func NewHive(params *HiveParams, kad *Kademlia, store state.Store) *Hive {
 // these are called on the p2p.Server which runs on the node
 func (h *Hive) Start(server *p2p.Server) error {
 	log.Info("Starting hive", "baseaddr", fmt.Sprintf("%x", h.BaseAddr()[:4]))
-	// if state store is specified, load peers to prepopulate the overlay address book
+
+	// assigns the p2p.Server#AddPeer function to connect to peers
+	h.addPeer = server.AddPeer
+
+	// if state store is specified, load known peers to prepopulate the overlay address book, and
+	// load prevous live peers and try to connect to them
 	if h.Store != nil {
 		log.Info("Detected an existing store. trying to load peers")
 		if err := h.loadPeers(); err != nil {
-			log.Error(fmt.Sprintf("%08x hive encoutered an error trying to load peers", h.BaseAddr()[:4]))
+			log.Error("hive error on load peers", "err", err)
 			return err
 		}
 	}
-	// assigns the p2p.Server#AddPeer function to connect to peers
-	h.addPeer = server.AddPeer
+
 	// ticker to keep the hive alive
 	h.ticker = time.NewTicker(h.KeepAliveInterval)
+
 	// this loop is doing bootstrapping and maintains a healthy table
 	go h.connect()
+
 	return nil
 }
 
 // Stop terminates the updateloop and saves the peers
 func (h *Hive) Stop() error {
-	log.Info(fmt.Sprintf("%08x hive stopping, saving peers", h.BaseAddr()[:4]))
+	log.Info("hive stopping, saving known and live peers")
+
 	h.ticker.Stop()
 	if h.Store != nil {
 		if err := h.savePeers(); err != nil {
@@ -113,14 +120,15 @@ func (h *Hive) Stop() error {
 			return fmt.Errorf("could not close file handle to persistence store: %v", err)
 		}
 	}
-	log.Info(fmt.Sprintf("%08x hive stopped, dropping peers", h.BaseAddr()[:4]))
+
+	log.Debug("disconnecting peers")
 	h.EachConn(nil, 255, func(p *Peer, _ int) bool {
-		log.Info(fmt.Sprintf("%08x dropping peer %08x", h.BaseAddr()[:4], p.Address()[:4]))
+		log.Debug("disconnecting peer", "peer", fmt.Sprintf("%x", p.Address()))
 		p.Drop()
 		return true
 	})
 
-	log.Info(fmt.Sprintf("%08x all peers dropped", h.BaseAddr()[:4]))
+	log.Debug("all peers disconnected")
 	return nil
 }
 
@@ -129,7 +137,6 @@ func (h *Hive) Stop() error {
 // as well as advertises saturation depth if needed
 func (h *Hive) connect() {
 	for range h.ticker.C {
-
 		addr, depth, changed := h.SuggestPeer()
 		if h.Discovery && changed {
 			NotifyDepth(uint8(depth), h.Kademlia)
@@ -216,36 +223,79 @@ func (h *Hive) Peer(id enode.ID) *BzzPeer {
 	return h.peers[id]
 }
 
-// loadPeers, savePeer implement persistence callback/
+// loadPeers loads the persisted peer information on boot up
 func (h *Hive) loadPeers() error {
-	var as []*BzzAddr
-	err := h.Store.Get("peers", &as)
-	if err != nil {
-		if err == state.ErrNotFound {
-			log.Info(fmt.Sprintf("hive %08x: no persisted peers found", h.BaseAddr()[:4]))
-			return nil
-		}
-		return err
-	}
-	log.Info(fmt.Sprintf("hive %08x: peers loaded", h.BaseAddr()[:4]))
+	var livePeers []*BzzAddr
 
-	return h.Register(as...)
+	err := h.Store.Get("livePeers", &livePeers)
+	if err != nil {
+		if err != state.ErrNotFound {
+			return err
+		}
+		log.Debug("hive no persisted live peers found")
+	}
+
+	for _, p := range livePeers {
+		log.Debug("connecting to persisted live peer", "peer", p)
+
+		n, err := enode.ParseV4(string(p.UAddr))
+		if err != nil {
+			log.Error(err.Error())
+		}
+
+		h.addPeer(n)
+	}
+
+	var knownPeers []*BzzAddr
+	err = h.Store.Get("knownPeers", &knownPeers)
+	if err != nil {
+		if err != state.ErrNotFound {
+			return err
+		}
+		log.Debug("hive no persisted known peers found")
+	}
+
+	err = h.Register(knownPeers...)
+	if err != nil {
+		log.Error(err.Error())
+	}
+
+	return nil
 }
 
-// savePeers, savePeer implement persistence callback/
+// savePeers iterates over known and live peers and persists them so that we keep the state for next boot up
 func (h *Hive) savePeers() error {
-	var peers []*BzzAddr
+	var knownPeers []*BzzAddr
+	var livePeers []*BzzAddr
+
+	// iterate over known peers
 	h.Kademlia.EachAddr(nil, 256, func(pa *BzzAddr, i int) bool {
 		if pa == nil {
-			log.Warn(fmt.Sprintf("empty addr: %v", i))
+			log.Warn("hive empty addr", "addr", i)
 			return true
 		}
-		log.Trace("saving peer", "peer", pa)
-		peers = append(peers, pa)
+		log.Trace("saving known peer", "peer", pa)
+		knownPeers = append(knownPeers, pa)
 		return true
 	})
-	if err := h.Store.Put("peers", peers); err != nil {
-		return fmt.Errorf("could not save peers: %v", err)
+
+	// iterate over live peers
+	h.Kademlia.EachConn(nil, 256, func(p *Peer, i int) bool {
+		if p == nil {
+			log.Warn("hive empty addr", "addr", i)
+			return true
+		}
+		log.Trace("saving live peer", "peer", p)
+		livePeers = append(livePeers, p.BzzPeer.BzzAddr)
+		return true
+	})
+
+	if err := h.Store.Put("livePeers", livePeers); err != nil {
+		return fmt.Errorf("could not save live peers: %v", err)
+	}
+
+	if err := h.Store.Put("knownPeers", knownPeers); err != nil {
+		return fmt.Errorf("could not save known peers: %v", err)
 	}
 	return nil
 }
