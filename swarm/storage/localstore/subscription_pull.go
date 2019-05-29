@@ -135,7 +135,10 @@ func (db *DB) SubscribePull(ctx context.Context, bin uint8, since, until uint64)
 					log.Error("localstore pull subscription iteration", "bin", bin, "since", since, "until", until, "err", err)
 					return
 				}
-				first = false
+				if count > 0 {
+					first = false
+				}
+				//first = false
 			case <-stopChan:
 				// terminate the subscription
 				// on stop
