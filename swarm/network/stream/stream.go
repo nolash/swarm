@@ -34,7 +34,12 @@ import (
 	"github.com/ethereum/go-ethereum/swarm/network/stream/intervals"
 	"github.com/ethereum/go-ethereum/swarm/state"
 	"github.com/ethereum/go-ethereum/swarm/storage"
+	"github.com/pborman/uuid"
 )
+
+//var (
+//lock sync.Mutex
+//)
 
 const (
 	Low uint8 = iota
@@ -475,9 +480,28 @@ type server struct {
 // stream is live or history. It calls Server SetNextBatch with adjusted
 // interval and returns batch hashes and their interval.
 func (s *server) setNextBatch(from, to uint64) ([]byte, uint64, uint64, *HandoverProof, error) {
+	uid := uuid.New()[:6]
+	//lock.Lock()
+	//defer lock.Unlock()
+
+	ss, ok := s.Server.(*SwarmSyncerServer)
+	if ok {
+
+		log.Trace("setNextBatch input", "gid", uid, "corid", ss.correlateId, "from", from, "to", to, "stream", s.stream, "s.sessionIndex", s.sessionIndex)
+		defer func() {
+			log.Trace("setNextBatch output", "gid", uid, "corid", ss.correlateId, "from", from, "to", to, "stream", s.stream, "s.sessionIndex", s.sessionIndex)
+		}()
+
+	}
+
 	if s.stream.Live {
 		if from == 0 {
 			from = s.sessionIndex
+			//if s.sessionIndex == 0 {
+			//from = 2
+			//} else {
+			//from = s.sessionIndex + 1
+			//}
 		}
 		if to <= from || from >= s.sessionIndex {
 			to = math.MaxUint64

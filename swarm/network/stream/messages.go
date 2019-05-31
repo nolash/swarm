@@ -125,6 +125,7 @@ func (p *Peer) handleSubscribeMsg(ctx context.Context, req *SubscribeMsg) (err e
 	}
 
 	go func() {
+		log.Trace("establish stream", "corId", s)
 		if err := p.SendOfferedHashes(os, from, to); err != nil {
 			log.Warn("SendOfferedHashes error", "peer", p.ID().TerminalString(), "err", err)
 		}

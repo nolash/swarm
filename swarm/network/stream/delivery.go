@@ -164,7 +164,7 @@ func (d *Delivery) handleChunkDeliveryMsg(ctx context.Context, sp *Peer, req int
 		mode = chunk.ModePutSync
 	}
 
-	log.Trace("handle.chunk.delivery", "ref", msg.Addr, "from peer", sp.ID())
+	log.Trace("handle.chunk.delivery", "ref", msg.Addr, "from peer", fmt.Sprintf("%x", sp.BzzPeer.BzzAddr.Address()))
 
 	go func() {
 		defer osp.Finish()

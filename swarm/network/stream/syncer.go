@@ -59,7 +59,7 @@ func RegisterSwarmSyncerServer(streamer *Registry, netStore *storage.NetStore) {
 		if err != nil {
 			return nil, err
 		}
-		return NewSwarmSyncerServer(po, netStore, fmt.Sprintf("%s|%d", p.ID(), po))
+		return NewSwarmSyncerServer(po, netStore, fmt.Sprintf("%x|%d", p.BzzPeer.BzzAddr.Address(), po))
 	})
 	// streamer.RegisterServerFunc(stream, func(p *Peer) (Server, error) {
 	// 	return NewOutgoingProvableSwarmSyncer(po, db)
@@ -125,7 +125,7 @@ func (s *SwarmSyncerServer) SetNextBatch(from, to uint64) ([]byte, uint64, uint6
 				iterate = false
 				break
 			}
-			log.Trace("chunk in set next batch", "ref", d.Address, "po", s.po, "binid", d.BinID)
+			log.Trace("chunk in set next batch", "ref", d.Address, "po", s.po, "binid", d.BinID, "corId", s.correlateId)
 			batch = append(batch, d.Address[:]...)
 			// This is the most naive approach to label the chunk as synced
 			// allowing it to be garbage collected. A proper way requires
