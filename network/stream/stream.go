@@ -234,17 +234,12 @@ func (r *Registry) Subscribe(peerId enode.ID, s Stream, h *Range, priority uint8
 	}
 
 	var to uint64
-	// this never happens
-	/*if !s.Live && h != nil {
-		log.Error("never")
-		to = h.To
-	}*/
 
 	err := peer.setClientParams(s, newClientParams(priority, to)) //always invoked
 	if err != nil {
 		return err
 	}
-	if s.Live && h != nil {
+	if h != nil && h.To > 0 {
 		// this is always invoked
 		if err := peer.setClientParams(
 			getHistoryStream(s),
@@ -357,14 +352,16 @@ func (r *Registry) Run(p *network.BzzPeer) error {
 func doRequestSubscription(r *Registry, id enode.ID, bin uint8) error {
 	log.Debug("Requesting subscription by registry:", "registry", r.addr, "peer", id, "bin", bin)
 	// bin is always less then 256 and it is safe to convert it to type uint8
+	// stream from NewStream(,,true) always yields SYNC|X|l
 	stream := NewStream("SYNC", FormatSyncBinKey(bin), true)
-	_, err := r.delivery.netStore.LastPullSubscriptionBinID(bin)
+
+	binID, err := r.delivery.netStore.LastPullSubscriptionBinID(bin)
 	if err != nil {
 		log.Error("error getting bin id for bin", "bin", bin, "err", err)
 		return err
 	}
-	//err = r.RequestSubscription(id, stream, NewRange(0, binID), High)
-	err = r.RequestSubscription(id, stream, NewRange(0, 0), High)
+	err = r.RequestSubscription(id, stream, NewRange(0, binID), High)
+	//err = r.RequestSubscription(id, stream, NewRange(0, 0), High)
 	if err != nil {
 		log.Debug("Request subscription", "err", err, "peer", id, "stream", stream)
 		return err
@@ -485,31 +482,26 @@ type server struct {
 	sessionIndex uint64
 }
 
+func (s *server) checkIntervals(from, to uint64) (bool, error) {
+	log.Debug("checking intervals", "from", from, "to", to)
+	if s.stream.Live {
+
+	} else {
+
+	}
+	return false, nil
+}
+
 // setNextBatch adjusts passed interval based on session index and whether
 // stream is live or history. It calls Server SetNextBatch with adjusted
 // interval and returns batch hashes and their interval.
 func (s *server) setNextBatch(from, to uint64) ([]byte, uint64, uint64, *HandoverProof, error) {
 	log.Debug("server.setNextBatch", "stream", s.stream, "from", from, "to", to, "sessionIdx", s.sessionIndex)
 	if s.stream.Live {
-		if from == 0 {
-			from = s.sessionIndex
-		}
-		if to <= from || from >= s.sessionIndex {
-			to = math.MaxUint64
-		}
 	} else {
-		// HISTORY
-		if s.sessionIndex == 0 {
-			// no need to sync any historical content when the sessionIndex is zero
-			log.Debug("no history to sync. quit")
-			return nil, 0, 0, nil, nil
-		}
 
-		if (to < from && to != 0) || from > s.sessionIndex {
+		if to < from && to != 0 {
 			return nil, 0, 0, nil, nil
-		}
-		if to == 0 || to > s.sessionIndex {
-			to = s.sessionIndex
 		}
 	}
 	return s.SetNextBatch(from, to)
@@ -532,9 +524,9 @@ type client struct {
 	stream    Stream
 	priority  uint8
 	sessionAt uint64
-	to        uint64
-	next      chan error
-	quit      chan struct{}
+	//to        uint64
+	next chan error
+	quit chan struct{}
 
 	intervalsKey   string
 	intervalsStore state.Store
@@ -572,54 +564,24 @@ type Client interface {
 
 func (c *client) nextBatch(from uint64) (nextFrom uint64, nextTo uint64) {
 	log.Debug("client.nextBatch", "from", from, "c.sessionAt", c.sessionAt, "stream", c.stream)
-	if c.to > 0 && from >= c.to {
-		log.Debug("ret 0 0")
-		return 0, 0
-	}
 	if c.stream.Live {
-		log.Debug("ret live")
-		return from, 0
-	} else if from >= c.sessionAt {
-		log.Debug("ret hist, from >= sessionAt", "from", from, "sessionAt", c.sessionAt)
-		if c.to > 0 {
-			log.Debug("ret c.to>0", "from", from, "c.to", c.to)
-			return from, c.to
-		}
-		log.Debug("ret from : maxint", "from", from)
 		return from, math.MaxUint64
 	}
+
 	nextFrom, nextTo, err := c.NextInterval()
 	if err != nil {
 		log.Error("next intervals", "stream", c.stream)
 		return
 	}
+
 	log.Debug("got from NextInterval", "nextFrom", nextFrom, "nextTo", nextTo)
-	if nextTo > c.to {
-		log.Debug("nextTo > c.to, setting nextTo to c.to", "nextTo", nextTo, "c.to", c.to)
-		nextTo = c.to
-	}
-	if nextTo == 0 {
-		log.Debug("nextTo == 0, setting nextTo to session index", c.sessionAt)
-		nextTo = c.sessionAt
+	if nextFrom < from {
+		nextFrom = from
 	}
 	return
 }
 
 func (c *client) batchDone(p *Peer, req *OfferedHashesMsg, hashes []byte) error {
-	if tf := c.BatchDone(req.Stream, req.From, hashes, req.Root); tf != nil {
-		tp, err := tf()
-		if err != nil {
-			return err
-		}
-
-		if err := p.Send(context.TODO(), tp); err != nil {
-			return err
-		}
-		if c.to > 0 && tp.Takeover.End >= c.to {
-			return p.streamer.Unsubscribe(p.Peer.ID(), req.Stream)
-		}
-		return nil
-	}
 	return c.AddInterval(req.From, req.To)
 }
 
@@ -636,15 +598,15 @@ func (c *client) close() {
 // between a subscription and initial offered hashes request handling.
 type clientParams struct {
 	priority uint8
-	to       uint64
+	//to       uint64
 	// signal when the client is created
 	clientCreatedC chan struct{}
 }
 
 func newClientParams(priority uint8, to uint64) *clientParams {
 	return &clientParams{
-		priority:       priority,
-		to:             to,
+		priority: priority,
+		//to:             to,
 		clientCreatedC: make(chan struct{}),
 	}
 }

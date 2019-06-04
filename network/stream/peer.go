@@ -221,7 +221,7 @@ func (p *Peer) getServer(s Stream) (*server, error) {
 	return server, nil
 }
 
-func (p *Peer) setServer(s Stream, o Server, priority uint8) (*server, error) {
+func (p *Peer) setServer(s Stream, h *Range, o Server, priority uint8) (*server, error) {
 	p.serverMu.Lock()
 	defer p.serverMu.Unlock()
 
@@ -233,10 +233,7 @@ func (p *Peer) setServer(s Stream, o Server, priority uint8) (*server, error) {
 		return nil, ErrMaxPeerServers
 	}
 
-	sessionIndex, err := o.SessionIndex()
-	if err != nil {
-		return nil, err
-	}
+	sessionIndex := h.To
 	os := &server{
 		Server:       o,
 		stream:       s,
@@ -356,10 +353,10 @@ func (p *Peer) getOrSetClient(s Stream, from, to uint64) (c *client, created boo
 
 	next := make(chan error, 1)
 	c = &client{
-		Client:         is,
-		stream:         s,
-		priority:       cp.priority,
-		to:             cp.to,
+		Client:   is,
+		stream:   s,
+		priority: cp.priority,
+		//to:             cp.to,
 		next:           next,
 		quit:           make(chan struct{}),
 		intervalsStore: p.streamer.intervalsStore,

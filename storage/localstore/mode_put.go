@@ -152,7 +152,7 @@ func (db *DB) put(mode chunk.ModePut, item shed.Item) (exists bool, err error) {
 			return exists, err
 		}
 		if exists {
-			log.Error("CHUNK ALREADY EXISTS - MODE PUT SYNC", "baseKey", hex.EncodeToString(db.baseKey))
+			log.Error("CHUNK ALREADY EXISTS - MODE PUT SYNC", "chunk", hex.EncodeToString(item.Address), "baseKey", hex.EncodeToString(db.baseKey))
 		}
 		if !exists {
 			item.StoreTimestamp = now()
