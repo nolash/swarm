@@ -184,7 +184,8 @@ func (p *Peer) SendOfferedHashes(s *server, f, t uint64) error {
 
 	defer metrics.GetOrRegisterResettingTimer("send.offered.hashes", nil).UpdateSince(time.Now())
 
-	hashes, from, to, proof, err := s.setNextBatch(f, t)
+	hashes, from, to, proof, err := s.SetNextBatch(f, t)
+
 	if err != nil {
 		return err
 	}
@@ -221,7 +222,7 @@ func (p *Peer) getServer(s Stream) (*server, error) {
 	return server, nil
 }
 
-func (p *Peer) setServer(s Stream, h *Range, o Server, priority uint8) (*server, error) {
+func (p *Peer) setServer(s Stream, sessionIndex uint64, o Server, priority uint8) (*server, error) {
 	p.serverMu.Lock()
 	defer p.serverMu.Unlock()
 
@@ -233,7 +234,6 @@ func (p *Peer) setServer(s Stream, h *Range, o Server, priority uint8) (*server,
 		return nil, ErrMaxPeerServers
 	}
 
-	sessionIndex := h.To
 	os := &server{
 		Server:       o,
 		stream:       s,
@@ -294,11 +294,13 @@ func (p *Peer) getOrSetClient(s Stream, from, to uint64) (c *client, created boo
 	p.clientMu.Lock()
 	defer p.clientMu.Unlock()
 
+	// return an existing client if it exists
 	c = p.clients[s]
 	if c != nil {
 		return c, false, nil
 	}
 
+	// create a new one (because it doesnt)
 	f, err := p.streamer.GetClientFunc(s.Name)
 	if err != nil {
 		return nil, false, err

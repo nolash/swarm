@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/ethereum/go-ethereum/metrics"
@@ -110,18 +109,20 @@ func (p *Peer) handleSubscribeMsg(ctx context.Context, req *SubscribeMsg) (err e
 		return err
 	}
 
-	s, err := f(p, req.Stream.Key, req.Stream.Live)
+	s, err := f(p, req.Stream.Key, req.Stream.Live) //incoming subscribe msg is always for Live
 	if err != nil {
 		return err
 	}
-	os, err := p.setServer(req.Stream, NewRange(req.History.To, math.MaxUint64), s, req.Priority)
+	log.Debug("creating live sync sub", "from", req.History.To, "to", "maxint")
+	os, err := p.setServer(req.Stream, req.History.To, s, req.Priority)
 	if err != nil {
 		return err
 	}
 
 	go func() {
-		log.Error("sending first offered hashes for live stream", "os", os, "from", req.History.To, "to", "maxUint")
-		if err := p.SendOfferedHashes(os, req.History.To, math.MaxUint64); err != nil {
+		log.Error("sending first offered hashes for live stream", "from", req.History.To, "to", "maxUint")
+
+		if err := p.SendOfferedHashes(os, req.History.To+1, req.History.To+128); err != nil {
 			log.Warn("SendOfferedHashes error", "peer", p.ID().TerminalString(), "err", err)
 		}
 	}()
@@ -134,12 +135,12 @@ func (p *Peer) handleSubscribeMsg(ctx context.Context, req *SubscribeMsg) (err e
 			return err
 		}
 
-		os, err := p.setServer(getHistoryStream(req.Stream), req.History, s, getHistoryPriority(req.Priority))
+		os, err := p.setServer(getHistoryStream(req.Stream), req.History.To, s, getHistoryPriority(req.Priority))
 		if err != nil {
 			return err
 		}
 		go func() {
-			log.Error("sending first offered hashes for history stream", "os", os, "from", req.History.From, "to", req.History.To)
+			log.Error("sending first offered hashes for history stream", "from", req.History.From, "to", req.History.To)
 			if err := p.SendOfferedHashes(os, req.History.From, req.History.To); err != nil {
 				log.Warn("SendOfferedHashes error", "peer", p.ID().TerminalString(), "err", err)
 			}
@@ -198,7 +199,7 @@ func (m OfferedHashesMsg) String() string {
 // Filter method
 func (p *Peer) handleOfferedHashesMsg(ctx context.Context, req *OfferedHashesMsg) error {
 	metrics.GetOrRegisterCounter("peer.handleofferedhashes", nil).Inc(1)
-
+	log.Debug("handleOfferedHashes", "from", req.From, "req.To", req.To)
 	c, _, err := p.getOrSetClient(req.Stream, req.From, req.To)
 	if err != nil {
 		return err
@@ -289,12 +290,17 @@ func (p *Peer) handleOfferedHashesMsg(ctx context.Context, req *OfferedHashesMsg
 		return nil
 	}
 
-	// check if we are past the sessionIndex
-	/*	if from > c.sessionAt {
+	// check if we are past the sessionIndex only if its historical sync
+	if !req.Stream.Live {
+		if from > c.sessionAt {
 			log.Debug("killing this thing...")
 			return nil
 		}
-	*/
+		if to > c.sessionAt {
+			to = c.sessionAt
+		}
+	}
+
 	msg := &WantedHashesMsg{
 		Stream: req.Stream,
 		Want:   want.Bytes(),
@@ -365,7 +371,7 @@ func (p *Peer) handleWantedHashesMsg(ctx context.Context, req *WantedHashesMsg) 
 	// go p.SendOfferedHashes(s, req.From, req.To)
 	l := len(hashes) / HashSize
 
-	log.Trace("wanted batch length", "peer", p.ID(), "stream", req.Stream, "from", req.From, "to", req.To, "lenhashes", len(hashes), "l", l)
+	log.Trace("wanted batch length", "peer", p.ID(), "stream", req.Stream, "from", req.From, "to", req.To, "hashes", l)
 	want, err := bv.NewFromBytes(req.Want, l)
 	if err != nil {
 		return fmt.Errorf("error initiaising bitvector of length %v: %v", l, err)

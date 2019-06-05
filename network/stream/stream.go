@@ -19,7 +19,6 @@ package stream
 import (
 	"context"
 	"fmt"
-	"math"
 	"reflect"
 	"sync"
 	"time"
@@ -247,6 +246,11 @@ func (r *Registry) Subscribe(peerId enode.ID, s Stream, h *Range, priority uint8
 		); err != nil {
 			return err
 		}
+		c, _, err := peer.getOrSetClient(getHistoryStream(s), h.From, h.To)
+		if err != nil {
+			return err
+		}
+		c.sessionAt = h.To
 	}
 
 	msg := &SubscribeMsg{
@@ -482,31 +486,6 @@ type server struct {
 	sessionIndex uint64
 }
 
-func (s *server) checkIntervals(from, to uint64) (bool, error) {
-	log.Debug("checking intervals", "from", from, "to", to)
-	if s.stream.Live {
-
-	} else {
-
-	}
-	return false, nil
-}
-
-// setNextBatch adjusts passed interval based on session index and whether
-// stream is live or history. It calls Server SetNextBatch with adjusted
-// interval and returns batch hashes and their interval.
-func (s *server) setNextBatch(from, to uint64) ([]byte, uint64, uint64, *HandoverProof, error) {
-	log.Debug("server.setNextBatch", "stream", s.stream, "from", from, "to", to, "sessionIdx", s.sessionIndex)
-	if s.stream.Live {
-	} else {
-
-		if to < from && to != 0 {
-			return nil, 0, 0, nil, nil
-		}
-	}
-	return s.SetNextBatch(from, to)
-}
-
 // Server interface for outgoing peer Streamer
 type Server interface {
 	// SessionIndex is called when a server is initialized
@@ -565,7 +544,7 @@ type Client interface {
 func (c *client) nextBatch(from uint64) (nextFrom uint64, nextTo uint64) {
 	log.Debug("client.nextBatch", "from", from, "c.sessionAt", c.sessionAt, "stream", c.stream)
 	if c.stream.Live {
-		return from, math.MaxUint64
+		return from, from + 128
 	}
 
 	nextFrom, nextTo, err := c.NextInterval()
@@ -576,6 +555,8 @@ func (c *client) nextBatch(from uint64) (nextFrom uint64, nextTo uint64) {
 
 	log.Debug("got from NextInterval", "nextFrom", nextFrom, "nextTo", nextTo)
 	if nextFrom < from {
+		//panic(wtf000")
+		log.Error("nextFrom<from", "nextFrom", nextFrom, "from", from)
 		nextFrom = from
 	}
 	return
