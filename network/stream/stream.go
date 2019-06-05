@@ -516,6 +516,7 @@ func peerStreamIntervalsKey(p *Peer, s Stream) string {
 }
 
 func (c *client) AddInterval(start, end uint64) (err error) {
+	log.Debug("adding interval", "start", start, "end", end, "stream", c.stream)
 	i := &intervals.Intervals{}
 	if err = c.intervalsStore.Get(c.intervalsKey, i); err != nil {
 		return err
@@ -560,10 +561,6 @@ func (c *client) nextBatch(from uint64) (nextFrom uint64, nextTo uint64) {
 		nextFrom = from
 	}
 	return
-}
-
-func (c *client) batchDone(p *Peer, req *OfferedHashesMsg, hashes []byte) error {
-	return c.AddInterval(req.From, req.To)
 }
 
 func (c *client) close() {

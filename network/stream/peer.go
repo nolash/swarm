@@ -185,7 +185,7 @@ func (p *Peer) SendOfferedHashes(s *server, f, t uint64) error {
 	defer metrics.GetOrRegisterResettingTimer("send.offered.hashes", nil).UpdateSince(time.Now())
 
 	hashes, from, to, proof, err := s.SetNextBatch(f, t)
-
+	log.Debug("got from SetNextBatch", "stream", s.stream, "from", from, "to", to, "lenHashes", len(hashes))
 	if err != nil {
 		return err
 	}

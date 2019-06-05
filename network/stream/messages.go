@@ -120,9 +120,7 @@ func (p *Peer) handleSubscribeMsg(ctx context.Context, req *SubscribeMsg) (err e
 	}
 
 	go func() {
-		log.Error("sending first offered hashes for live stream", "from", req.History.To, "to", "maxUint")
-
-		if err := p.SendOfferedHashes(os, req.History.To+1, req.History.To+128); err != nil {
+		if err := p.SendOfferedHashes(os, req.History.To, req.History.To+128); err != nil {
 			log.Warn("SendOfferedHashes error", "peer", p.ID().TerminalString(), "err", err)
 		}
 	}()
@@ -259,6 +257,7 @@ func (p *Peer) handleOfferedHashesMsg(ctx context.Context, req *OfferedHashesMsg
 
 	go func() {
 		defer cancel()
+		log.Debug("ctr", "stream", c.stream, "ctr", ctr)
 		for i := 0; i < ctr; i++ {
 			select {
 			case err := <-errC:
@@ -275,8 +274,9 @@ func (p *Peer) handleOfferedHashesMsg(ctx context.Context, req *OfferedHashesMsg
 				return
 			}
 		}
+		log.Debug("going to add interval", "stream", c.stream, "from", req.From, "to", req.To)
 		select {
-		case c.next <- c.batchDone(p, req, hashes):
+		case c.next <- c.AddInterval(req.From, req.To):
 		case <-c.quit:
 			log.Debug("client.handleOfferedHashesMsg() quit")
 		case <-ctx.Done():
