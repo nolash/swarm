@@ -97,10 +97,6 @@ func (s *SwarmSyncerServer) SessionIndex() (uint64, error) {
 // will block until new chunks are received from localstore pull subscription.
 func (s *SwarmSyncerServer) SetNextBatch(from, to uint64) ([]byte, uint64, uint64, *HandoverProof, error) {
 	log.Debug("syncer.SetNextBatch", "from", from, "to", to)
-	//TODO: maybe add unit test for intervals usage in netstore/localstore together with SwarmSyncerServer?
-	//if from > 0 {
-	//	from--
-	//	}
 	batchStart := time.Now()
 	descriptors, stop := s.netStore.SubscribePull(context.Background(), s.po, from, to)
 	defer stop()
@@ -163,11 +159,9 @@ func (s *SwarmSyncerServer) SetNextBatch(from, to uint64) ([]byte, uint64, uint6
 			if timer == nil {
 				timer = time.NewTimer(batchTimeout)
 			} else {
-				log.Trace("syncer pull subscription - stopping timer", "correlateId", s.correlateId)
 				if !timer.Stop() {
 					<-timer.C
 				}
-				log.Trace("syncer pull subscription - channel drained, resetting timer", "correlateId", s.correlateId)
 				timer.Reset(batchTimeout)
 			}
 			timerC = timer.C
@@ -176,10 +170,8 @@ func (s *SwarmSyncerServer) SetNextBatch(from, to uint64) ([]byte, uint64, uint6
 			// received after some time
 			iterate = false
 			metrics.GetOrRegisterCounter("syncer.set-next-batch.timer-expire", nil).Inc(1)
-			log.Trace("syncer pull subscription timer expired", "correlateId", s.correlateId, "batchSize", batchSize, "batchStartID", batchStartID, "batchEndID", batchEndID)
 		case <-s.quit:
 			iterate = false
-			log.Trace("syncer pull subscription - quit received", "correlateId", s.correlateId, "batchSize", batchSize, "batchStartID", batchStartID, "batchEndID", batchEndID)
 		}
 	}
 	if batchStartID == nil {

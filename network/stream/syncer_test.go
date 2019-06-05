@@ -411,7 +411,7 @@ func TestTwoNodesFullSync(t *testing.T) { //
 			return fmt.Errorf("fileStore.Store: %v", err)
 		}
 
-		_, wait2, err := fileStore.Store(ctx, testutil.RandomReader(10, size), int64(size), false)
+		_, wait2, err := fileStore.Store(ctx, testutil.RandomReader(101, size), int64(size), false)
 		if err != nil {
 			return fmt.Errorf("fileStore.Store: %v", err)
 		}
@@ -459,9 +459,10 @@ func TestTwoNodesFullSync(t *testing.T) { //
 				}
 				otherSum += int(shouldUntil)
 				uploaderSum += int(uploaderUntil)
+				log.Debug("summing", "po", po, "uploader", uploaderUntil, "otherUntil", shouldUntil)
 			}
 			if uploaderSum != otherSum {
-				t.Fatalf("did not get correct bin index from peer. got %d want %d", uploaderSum, otherSum)
+				t.Fatalf("did not get correct bin index from peer. got %d want %d", otherSum, uploaderSum)
 			}
 		}
 		return nil
