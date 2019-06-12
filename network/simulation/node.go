@@ -131,6 +131,12 @@ func (s *Simulation) AddNode(opts ...AddNodeOption) (id enode.ID, err error) {
 	s.buckets[node.ID()] = new(sync.Map)
 	s.SetNodeItem(node.ID(), BucketKeyBzzPrivateKey, bzzPrivateKey)
 
+	// temporary hack until this can be customized in the p2p simulations layer
+	if conf.EnableMsgEvents && s.typ == SimulationTypeExec {
+		exnode := node.Node.(*adapters.ExecNode)
+		exnode.Config.Stack.P2P.EnableMsgEvents = true
+	}
+
 	return node.ID(), s.Net.Start(node.ID())
 }
 
