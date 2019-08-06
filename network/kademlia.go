@@ -143,7 +143,7 @@ func (e *entry) Hex() string {
 	return fmt.Sprintf("%x", e.Address())
 }
 
-// Register enters each address as kademlia peer record into the
+// enters each address as kademlia peer record into the
 // database of known peer addresses
 func (k *Kademlia) Register(peers ...*BzzAddr) error {
 	k.lock.Lock()

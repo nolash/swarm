@@ -122,7 +122,7 @@ func newBzzBaseTesterWithAddrs(prvkey *ecdsa.PrivateKey, addrs [][]byte, spec *p
 		mu.Lock()
 		nodeToAddr[p.ID()] = addrs[0]
 		mu.Unlock()
-		bzzAddr := &BzzAddr{addrs[0], []byte(p.Node().String())}
+		bzzAddr := &BzzAddr{addrs[0], []byte(p.Node().String()), nil}
 		addrs = addrs[1:]
 		return srv(&BzzPeer{Peer: protocols.NewPeer(p, rw, spec), BzzAddr: bzzAddr})
 	}

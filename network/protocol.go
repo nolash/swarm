@@ -134,15 +134,15 @@ type Bzz struct {
 // * overlay driver
 // * peer store
 func NewBzz(config *BzzConfig, kad *Kademlia, store state.Store, streamerSpec *protocols.Spec, streamerRun func(*BzzPeer) error) *Bzz {
+	capabilities := NewCapabilities()
 	bzz := &Bzz{
 		Hive:         NewHive(config.HiveParams, kad, store),
 		Capabilities: NewCapabilities(),
 		NetworkID:    config.NetworkID,
-		localAddr:    &BzzAddr{config.OverlayAddr, config.UnderlayAddr},
+		localAddr:    &BzzAddr{config.OverlayAddr, config.UnderlayAddr, capabilities},
 		handshakes:   make(map[enode.ID]*HandshakeMsg),
 		streamerRun:  streamerRun,
 		streamerSpec: streamerSpec,
-		//capabilities: NewCapabilities(),
 	}
 
 	if config.BootnodeMode {

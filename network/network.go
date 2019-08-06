@@ -12,8 +12,9 @@ import (
 
 // BzzAddr implements the PeerAddr interface
 type BzzAddr struct {
-	OAddr []byte
-	UAddr []byte
+	OAddr        []byte
+	UAddr        []byte
+	capabilities *Capabilities
 }
 
 // Address implements OverlayPeer interface to be used in Overlay.
@@ -42,12 +43,18 @@ func (a *BzzAddr) ID() enode.ID {
 
 // Update updates the underlay address of a peer record
 func (a *BzzAddr) Update(na *BzzAddr) *BzzAddr {
-	return &BzzAddr{a.OAddr, na.UAddr}
+	return &BzzAddr{a.OAddr, na.UAddr, nil}
 }
 
 // String pretty prints the address
 func (a *BzzAddr) String() string {
 	return fmt.Sprintf("%x <%s>", a.OAddr, a.UAddr)
+}
+
+// WithCapabilities is a chainable method that enables setting Capabilities on a peer
+func (a *BzzAddr) WithCapabilities(c *Capabilities) *BzzAddr {
+	a.capabilities = c
+	return a
 }
 
 // RandomAddr is a utility method generating an address from a public key
