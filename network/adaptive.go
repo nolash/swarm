@@ -117,22 +117,6 @@ func (c Capabilities) get(id CapabilityId) *Capability {
 	return c.Caps[idx]
 }
 
-//func (c Capabilities) remove(id CapabilityId) {
-//	if len(c.Caps) == 0 {
-//		return
-//	}
-//	mu.Lock()
-//	defer mu.Unlock()
-//	idx, ok := c.idx[id]
-//	if !ok {
-//		return
-//	}
-//	if len(c.Caps > 1) {
-//		c.Caps[idx] = c.Caps[len(c.Caps)-1]
-//	}
-//	c.Caps = c.Caps[:len(c.Caps)-1]
-//}
-
 // String Implements Stringer interface
 func (c Capabilities) String() (s string) {
 	for _, cp := range c.Caps {

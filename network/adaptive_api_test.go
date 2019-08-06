@@ -6,7 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-// TestCapabilitiesAPINotifications tests that API calls generates the expected notifications on subscriptions
+// TestCapabilitiesAPI tests that API calls stores and reports correctly
 func TestCapabilitiesAPI(t *testing.T) {
 
 	// Initialize capability
