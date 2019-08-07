@@ -118,13 +118,14 @@ type BzzConfig struct {
 // Bzz is the swarm protocol bundle
 type Bzz struct {
 	*Hive
+	*Capabilities
 	NetworkID    uint64
 	localAddr    *BzzAddr
 	mtx          sync.Mutex
 	handshakes   map[enode.ID]*HandshakeMsg
 	streamerSpec *protocols.Spec
 	streamerRun  func(*BzzPeer) error
-	capabilities *Capabilities // capabilities control and state
+	//capabilities *Capabilities // capabilities control and state
 }
 
 // NewBzz is the swarm protocol constructor
@@ -135,12 +136,13 @@ type Bzz struct {
 func NewBzz(config *BzzConfig, kad *Kademlia, store state.Store, streamerSpec *protocols.Spec, streamerRun func(*BzzPeer) error) *Bzz {
 	bzz := &Bzz{
 		Hive:         NewHive(config.HiveParams, kad, store),
+		Capabilities: NewCapabilities(),
 		NetworkID:    config.NetworkID,
 		localAddr:    &BzzAddr{config.OverlayAddr, config.UnderlayAddr},
 		handshakes:   make(map[enode.ID]*HandshakeMsg),
 		streamerRun:  streamerRun,
 		streamerSpec: streamerSpec,
-		capabilities: NewCapabilities(),
+		//capabilities: NewCapabilities(),
 	}
 
 	if config.BootnodeMode {
@@ -150,9 +152,9 @@ func NewBzz(config *BzzConfig, kad *Kademlia, store state.Store, streamerSpec *p
 
 	// temporary soon-to-be-legacy light/full, as above
 	if config.LightNode {
-		bzz.capabilities.add(newLightCapability())
+		bzz.Capabilities.add(newLightCapability())
 	} else {
-		bzz.capabilities.add(newFullCapability())
+		bzz.Capabilities.add(newFullCapability())
 	}
 
 	return bzz
@@ -385,7 +387,7 @@ func (b *Bzz) GetOrCreateHandshake(peerID enode.ID) (*HandshakeMsg, bool) {
 			Version:      uint64(BzzSpec.Version),
 			NetworkID:    b.NetworkID,
 			Addr:         b.localAddr,
-			Capabilities: b.capabilities,
+			Capabilities: b.Capabilities,
 			init:         make(chan bool, 1),
 			done:         make(chan struct{}),
 		}

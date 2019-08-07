@@ -500,15 +500,21 @@ func (s *Swarm) APIs() []rpc.API {
 		// public APIs
 		{
 			Namespace: "bzz",
-			Version:   "3.0",
+			Version:   "4.0",
 			Service:   &Info{s.config, chequebook.ContractParams},
 			Public:    true,
 		},
 		// admin APIs
 		{
 			Namespace: "bzz",
-			Version:   "3.0",
+			Version:   "4.0",
 			Service:   api.NewInspector(s.api, s.bzz.Hive, s.netStore),
+			Public:    false,
+		},
+		{
+			Namespace: "bzz",
+			Version:   "4.0",
+			Service:   network.NewCapabilitiesAPI(s.bzz.Capabilities),
 			Public:    false,
 		},
 		{

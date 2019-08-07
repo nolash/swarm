@@ -20,35 +20,35 @@ func TestCapabilitiesAPI(t *testing.T) {
 	// create the capability and register it
 	c1 := NewCapability(42, 13)
 	c1.Set(9)
-	err := rpcClient.Call(nil, "cap_register", c1)
+	err := rpcClient.Call(nil, "cap_registerCapability", c1)
 	if err != nil {
 		t.Fatalf("Register fail: %v", err)
 	}
 
 	// check that the capability is registered
 	c1.Set(9)
-	err = rpcClient.Call(nil, "cap_isRegistered", c1.Id)
+	err = rpcClient.Call(nil, "cap_isRegisteredCapability", c1.Id)
 	if err != nil {
 		t.Fatalf("Register fail: %v", err)
 	}
 
 	// check that isRegistered doesn't give false positives
 	c2 := CapabilityId(13)
-	err = rpcClient.Call(nil, "cap_isRegistered", c2)
+	err = rpcClient.Call(nil, "cap_isRegisteredCapability", c2)
 	if err != nil {
 		t.Fatalf("Register fail: %v", err)
 	}
 
 	// check that correct values have been stored
 	var r bool
-	err = rpcClient.Call(&r, "cap_isSet", c1.Id, 9)
+	err = rpcClient.Call(&r, "cap_matchCapability", c1.Id, 9)
 	if err != nil {
 		t.Fatalf("isSet fail: %v", err)
 	} else if !r {
 		t.Fatalf("isSet should be false, got %v", r)
 	}
 
-	err = rpcClient.Call(&r, "cap_isSet", c1.Id, 1)
+	err = rpcClient.Call(&r, "cap_matchCapability", c1.Id, 1)
 	if err != nil {
 		t.Fatalf("isSet fail: %v", err)
 	} else if r {

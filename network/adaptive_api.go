@@ -1,5 +1,11 @@
 package network
 
+import (
+	"fmt"
+
+	"github.com/ethersphere/swarm/log"
+)
+
 // CapabilitiesAPI abstracts RPC API access to capabilities controls
 // will in the future provide notifications of capability changes
 type CapabilitiesAPI struct {
@@ -13,22 +19,26 @@ func NewCapabilitiesAPI(c *Capabilities) *CapabilitiesAPI {
 	}
 }
 
-// Set sets the appropriate flags for the corresponding Capability in the Capabilities array
-// If the Capability does not yet exist in the Capabilities array it is first added
-func (a *CapabilitiesAPI) Register(cp *Capability) error {
+// RegisterCapability adds the given capability object to the Capabilities collection
+// If the Capability is already registered an error will be returned
+func (a *CapabilitiesAPI) RegisterCapability(cp *Capability) error {
+	log.Debug("Registering capability", "cp", cp)
 	return a.add(cp)
 }
 
-func (a *CapabilitiesAPI) IsRegistered(id CapabilityId) bool {
-	return a.get(id) != nil
+// IsRegisteredCapability returns true if a Capability with the given id is registered
+func (a *CapabilitiesAPI) IsRegisteredCapability(id CapabilityId) (bool, error) {
+	return a.get(id) != nil, nil
 }
 
-func (a *CapabilitiesAPI) IsSet(id CapabilityId, idx int) bool {
+// MatchCapability returns true if the Capability flag at the given index is set
+// Fails with error if the Capability is not registered, or if the index is out of bounds
+func (a *CapabilitiesAPI) MatchCapability(id CapabilityId, idx int) (bool, error) {
 	c := a.get(id)
 	if c == nil {
-		return false
+		return false, fmt.Errorf("Capability %d not registered", id)
 	} else if idx > len(c.Cap)-1 {
-		return false
+		return false, fmt.Errorf("Capability %d idx %d out of range", id, idx)
 	}
-	return c.Cap[idx]
+	return c.Cap[idx], nil
 }
