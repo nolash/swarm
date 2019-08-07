@@ -81,17 +81,30 @@ func NewKadParams() *KadParams {
 	}
 }
 
+type kademliaCapabilityIndex struct {
+	capabilities *Capabilities
+	db           *pot.Pot
+}
+
+func NewKademliaCapabilityIndex(c *Capabilities) *kademliaCapabilityIndex {
+	return &kademliaCapabilityIndex{
+		capabilities: c,
+		db:           pot.NewPot(nil, 0),
+	}
+}
+
 // Kademlia is a table of live peers and a db of known peers (node records)
 type Kademlia struct {
-	lock       sync.RWMutex
-	*KadParams                 // Kademlia configuration parameters
-	base       []byte          // immutable baseaddress of the table
-	addrs      *pot.Pot        // pots container for known peer addresses
-	conns      *pot.Pot        // pots container for live peer connections
-	depth      uint8           // stores the last current depth of saturation
-	nDepth     int             // stores the last neighbourhood depth
-	nDepthMu   sync.RWMutex    // protects neighbourhood depth nDepth
-	nDepthSig  []chan struct{} // signals when neighbourhood depth nDepth is changed
+	lock            sync.RWMutex
+	*KadParams      // Kademlia configuration parameters
+	capabilityIndex map[string]*pot.Pot
+	base            []byte          // immutable baseaddress of the table
+	addrs           *pot.Pot        // pots container for known peer addresses
+	conns           *pot.Pot        // pots container for live peer connections
+	depth           uint8           // stores the last current depth of saturation
+	nDepth          int             // stores the last neighbourhood depth
+	nDepthMu        sync.RWMutex    // protects neighbourhood depth nDepth
+	nDepthSig       []chan struct{} // signals when neighbourhood depth nDepth is changed
 }
 
 type KademliaInfo struct {

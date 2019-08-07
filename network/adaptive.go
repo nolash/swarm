@@ -95,6 +95,27 @@ func NewCapabilities() *Capabilities {
 	}
 }
 
+func (c *Capabilities) Has(capsCompare *Capabilities) bool {
+	for _, capCompare := range capsCompare.Caps {
+
+		// if queryied id doesn't exist in object we can nay right away
+		cap := c.get(capCompare.Id)
+		if cap == nil {
+			return false
+		} else if len(cap.Cap) != len(capCompare.Cap) {
+			return false
+		}
+
+		// on the first occurence of false where query has true we can fail
+		for i, flag := range capCompare.Cap {
+			if flag && !cap.Cap[i] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // adds a capability to the Capabilities collection
 func (c *Capabilities) add(cp *Capability) error {
 	if _, ok := c.idx[cp.Id]; ok {

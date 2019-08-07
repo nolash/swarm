@@ -88,6 +88,63 @@ func TestCapabilitiesControl(t *testing.T) {
 	}
 }
 
+// TestCapabilitiesQuery tests methods for quering capability states
+func TestCapabilitiesQuery(t *testing.T) {
+
+	// Initialize capability
+	caps := NewCapabilities()
+
+	// Register module. Should succeed
+	c1 := NewCapability(1, 3)
+	c1.Set(1)
+	err := caps.add(c1)
+	if err != nil {
+		t.Fatalf("RegisterCapabilityModule fail: %v", err)
+	}
+
+	c2 := NewCapability(42, 9)
+	c2.Set(2)
+	c2.Set(8)
+	err = caps.add(c2)
+	if err != nil {
+		t.Fatalf("RegisterCapabilityModule fail: %v", err)
+	}
+
+	capsCompare := NewCapabilities()
+	capCompare := NewCapability(42, 10)
+	capCompare.Set(2)
+	capCompare.Set(8)
+	capsCompare.add(capCompare)
+	if caps.Has(capsCompare) {
+		t.Fatalf("Expected cCompare with mismatch length to fail; %s != %s", capsCompare, caps)
+	}
+
+	capsCompare = NewCapabilities()
+	capCompare = NewCapability(42, 9)
+	capCompare.Set(2)
+	capsCompare.add(capCompare)
+	if !caps.Has(capsCompare) {
+		t.Fatalf("Expected %s to match %s", capsCompare, caps)
+	}
+
+	capCompare = NewCapability(1, 3)
+	capsCompare.add(capCompare)
+	if !caps.Has(capsCompare) {
+		t.Fatalf("Expected %s to match %s", capsCompare, caps)
+	}
+
+	capCompare.Set(1)
+	if !caps.Has(capsCompare) {
+		t.Fatalf("Expected %s to match %s", capsCompare, caps)
+	}
+
+	capCompare.Set(2)
+	if caps.Has(capsCompare) {
+		t.Fatalf("Expected %s not to match %s", capsCompare, caps)
+	}
+
+}
+
 // TestCapabilitiesString checks that the string representation of the capabilities is correct
 func TestCapabilitiesString(t *testing.T) {
 	sets1 := []bool{
