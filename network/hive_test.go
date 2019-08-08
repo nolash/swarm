@@ -55,7 +55,7 @@ func TestRegisterAndConnect(t *testing.T) {
 	}
 
 	node := s.Nodes[0]
-	raddr := NewAddr(node)
+	raddr := NewAddr(node).WithCapabilities(NewCapabilities())
 	pp.Register(raddr)
 
 	// start the hive
@@ -152,7 +152,7 @@ func TestHiveStatePersistance(t *testing.T) {
 	h1, cleanup1 := startHive(t, dir)
 	peers := make(map[string]bool)
 	for i := 0; i < peersCount; i++ {
-		raddr := RandomAddr()
+		raddr := RandomAddr().WithCapabilities(NewCapabilities())
 		h1.Register(raddr)
 		peers[raddr.String()] = true
 	}

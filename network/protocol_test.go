@@ -82,10 +82,9 @@ func newBzzHandshakeMsg(version uint64, networkId uint64, addr *BzzAddr, lightNo
 	}
 	capabilities.add(cap)
 	msg := &HandshakeMsg{
-		Version:      version,
-		NetworkID:    networkId,
-		Addr:         addr,
-		Capabilities: capabilities,
+		Version:   version,
+		NetworkID: networkId,
+		Addr:      addr.WithCapabilities(capabilities),
 	}
 
 	return msg
@@ -201,7 +200,7 @@ func newBzzHandshakeTester(n int, prvkey *ecdsa.PrivateKey, lightNode bool) (*bz
 	pt := p2ptest.NewProtocolTester(prvkey, n, bzz.runBzz)
 
 	return &bzzTester{
-		addr:           addr,
+		addr:           bzz.localAddr,
 		ProtocolTester: pt,
 		bzz:            bzz,
 	}, nil
@@ -234,8 +233,8 @@ func (s *bzzTester) testHandshake(lhs, rhs *HandshakeMsg, disconnects ...*p2ptes
 	return nil
 }
 
-func correctBzzHandshake(addr *BzzAddr, lightNode bool) *HandshakeMsg {
-	return newBzzHandshakeMsg(TestProtocolVersion, TestProtocolNetworkID, addr, lightNode)
+func correctBzzHandshake(addr *BzzAddr) *HandshakeMsg {
+	return newBzzHandshakeMsg(TestProtocolVersion, TestProtocolNetworkID, addr, isLightCapability(addr.Capabilities.get(0)))
 }
 
 func TestBzzHandshakeNetworkIDMismatch(t *testing.T) {
@@ -252,7 +251,7 @@ func TestBzzHandshakeNetworkIDMismatch(t *testing.T) {
 	node := s.Nodes[0]
 
 	err = s.testHandshake(
-		correctBzzHandshake(s.addr, lightNode),
+		correctBzzHandshake(s.addr),
 		newBzzHandshakeMsg(TestProtocolVersion, 321, NewAddr(node), false),
 		&p2ptest.Disconnect{Peer: node.ID(), Error: fmt.Errorf("Handshake error: Message handler error: (msg code 0): network id mismatch 321 (!= %v)", TestProtocolNetworkID)},
 	)
@@ -276,7 +275,7 @@ func TestBzzHandshakeVersionMismatch(t *testing.T) {
 	node := s.Nodes[0]
 
 	err = s.testHandshake(
-		correctBzzHandshake(s.addr, lightNode),
+		correctBzzHandshake(s.addr),
 		newBzzHandshakeMsg(0, TestProtocolNetworkID, NewAddr(node), false),
 		&p2ptest.Disconnect{Peer: node.ID(), Error: fmt.Errorf("Handshake error: Message handler error: (msg code 0): version mismatch 0 (!= %d)", TestProtocolVersion)},
 	)
@@ -301,12 +300,12 @@ func TestBzzHandshakeInvalidCapabilities(t *testing.T) {
 	node := s.Nodes[0]
 
 	msg := newBzzHandshakeMsg(TestProtocolVersion, TestProtocolNetworkID, NewAddr(node), false)
-	cap := msg.Capabilities.get(0)
+	cap := msg.Addr.Capabilities.get(0)
 	cap.Set(14)
 	err = s.testHandshake(
-		correctBzzHandshake(s.addr, lightNode),
+		correctBzzHandshake(s.addr),
 		msg,
-		&p2ptest.Disconnect{Peer: node.ID(), Error: fmt.Errorf("Handshake error: Message handler error: (msg code 0): invalid capabilities setting: %s", msg.Capabilities)},
+		&p2ptest.Disconnect{Peer: node.ID(), Error: fmt.Errorf("Handshake error: Message handler error: (msg code 0): invalid capabilities setting: %s", msg.Addr.Capabilities)},
 	)
 
 	if err != nil {
@@ -327,7 +326,7 @@ func TestBzzHandshakeSuccess(t *testing.T) {
 	node := s.Nodes[0]
 
 	err = s.testHandshake(
-		correctBzzHandshake(s.addr, lightNode),
+		correctBzzHandshake(s.addr),
 		newBzzHandshakeMsg(TestProtocolVersion, TestProtocolNetworkID, NewAddr(node), false),
 	)
 
@@ -351,7 +350,7 @@ func TestBzzHandshakeLightNode(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pt, err := newBzzHandshakeTester(1, prvkey, false)
+			pt, err := newBzzHandshakeTester(1, prvkey, test.lightNode)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -359,10 +358,11 @@ func TestBzzHandshakeLightNode(t *testing.T) {
 
 			node := pt.Nodes[0]
 			addr := NewAddr(node)
+			msg := newBzzHandshakeMsg(TestProtocolVersion, TestProtocolNetworkID, addr, test.lightNode)
 
 			err = pt.testHandshake(
-				correctBzzHandshake(pt.addr, false),
-				newBzzHandshakeMsg(TestProtocolVersion, TestProtocolNetworkID, addr, test.lightNode),
+				correctBzzHandshake(pt.addr),
+				msg,
 			)
 
 			if err != nil {
@@ -378,7 +378,7 @@ func TestBzzHandshakeLightNode(t *testing.T) {
 			select {
 
 			case <-pt.bzz.handshakes[node.ID()].done:
-				for _, cp := range pt.bzz.handshakes[node.ID()].Capabilities.Caps {
+				for _, cp := range pt.bzz.handshakes[node.ID()].Addr.Capabilities.Caps {
 					if cp.String() != nodeCapability.String() {
 						t.Fatalf("peer LightNode flag is %v, should be %v", cp.String(), nodeCapability.String())
 					}

@@ -41,14 +41,14 @@ func TestCapabilitiesAPI(t *testing.T) {
 
 	// check that correct values have been stored
 	var r bool
-	err = rpcClient.Call(&r, "cap_matchCapability", c1.Id, 9)
+	err = rpcClient.Call(&r, "cap_hasCapability", c1.Id, 9)
 	if err != nil {
 		t.Fatalf("isSet fail: %v", err)
 	} else if !r {
 		t.Fatalf("isSet should be false, got %v", r)
 	}
 
-	err = rpcClient.Call(&r, "cap_matchCapability", c1.Id, 1)
+	err = rpcClient.Call(&r, "cap_hasCapability", c1.Id, 1)
 	if err != nil {
 		t.Fatalf("isSet fail: %v", err)
 	} else if r {

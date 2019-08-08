@@ -48,7 +48,7 @@ func TestSubPeersMsg(t *testing.T) {
 	}
 
 	node := s.Nodes[0]
-	raddr := NewAddr(node)
+	raddr := NewAddr(node).WithCapabilities(NewCapabilities())
 	pp.Register(raddr)
 
 	// start the hive and wait for the connection
@@ -125,7 +125,9 @@ func testInitialPeersMsg(t *testing.T, peerPO, peerDepth int) {
 	}
 	register := func(a pot.Address, po int) {
 		addr := pot.RandomAddressAt(a, po)
-		hive.Register(&BzzAddr{OAddr: addr[:]})
+		bzzAddr := &BzzAddr{OAddr: addr[:]}
+		bzzAddr.WithCapabilities(NewCapabilities())
+		hive.Register()
 	}
 
 	// generate connected and just registered peers

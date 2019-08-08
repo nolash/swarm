@@ -118,7 +118,6 @@ type BzzConfig struct {
 // Bzz is the swarm protocol bundle
 type Bzz struct {
 	*Hive
-	*Capabilities
 	NetworkID    uint64
 	localAddr    *BzzAddr
 	mtx          sync.Mutex
@@ -135,11 +134,21 @@ type Bzz struct {
 // * peer store
 func NewBzz(config *BzzConfig, kad *Kademlia, store state.Store, streamerSpec *protocols.Spec, streamerRun func(*BzzPeer) error) *Bzz {
 	capabilities := NewCapabilities()
+	// temporary soon-to-be-legacy light/full, as above
+	if config.LightNode {
+		capabilities.add(newLightCapability())
+	} else {
+		capabilities.add(newFullCapability())
+	}
+	addr := &BzzAddr{
+		OAddr: config.OverlayAddr,
+		UAddr: config.UnderlayAddr,
+	}
+
 	bzz := &Bzz{
 		Hive:         NewHive(config.HiveParams, kad, store),
-		Capabilities: NewCapabilities(),
 		NetworkID:    config.NetworkID,
-		localAddr:    &BzzAddr{config.OverlayAddr, config.UnderlayAddr, capabilities},
+		localAddr:    addr.WithCapabilities(capabilities),
 		handshakes:   make(map[enode.ID]*HandshakeMsg),
 		streamerRun:  streamerRun,
 		streamerSpec: streamerSpec,
@@ -149,14 +158,6 @@ func NewBzz(config *BzzConfig, kad *Kademlia, store state.Store, streamerSpec *p
 		bzz.streamerRun = nil
 		bzz.streamerSpec = nil
 	}
-
-	// temporary soon-to-be-legacy light/full, as above
-	if config.LightNode {
-		bzz.Capabilities.add(newLightCapability())
-	} else {
-		bzz.Capabilities.add(newFullCapability())
-	}
-
 	return bzz
 }
 
@@ -275,7 +276,7 @@ func (b *Bzz) performHandshake(p *protocols.Peer, handshake *HandshakeMsg) error
 		return err
 	}
 	handshake.peerAddr = rsh.(*HandshakeMsg).Addr
-	handshake.Capabilities = rsh.(*HandshakeMsg).Capabilities
+	//handshake.Capabilities = rsh.(*HandshakeMsg).Capabilities
 	return nil
 }
 
@@ -334,10 +335,9 @@ func (p *BzzPeer) ID() enode.ID {
 * Capabilities: the capabilities bitvector
 */
 type HandshakeMsg struct {
-	Version      uint64
-	NetworkID    uint64
-	Addr         *BzzAddr
-	Capabilities *Capabilities
+	Version   uint64
+	NetworkID uint64
+	Addr      *BzzAddr
 
 	// peerAddr is the address received in the peer handshake
 	peerAddr *BzzAddr
@@ -349,7 +349,7 @@ type HandshakeMsg struct {
 
 // String pretty prints the handshake
 func (bh *HandshakeMsg) String() string {
-	return fmt.Sprintf("Handshake: Version: %v, NetworkID: %v, Addr: %v, peerAddr: %v, caps: %s", bh.Version, bh.NetworkID, bh.Addr, bh.peerAddr, bh.Capabilities)
+	return fmt.Sprintf("Handshake: Version: %v, NetworkID: %v, Addr: %v, peerAddr: %v, caps: %s", bh.Version, bh.NetworkID, bh.Addr, bh.peerAddr, bh.peerAddr.Capabilities)
 }
 
 // Perform initiates the handshake and validates the remote handshake message
@@ -361,10 +361,9 @@ func (b *Bzz) checkHandshake(hs interface{}) error {
 	if rhs.Version != uint64(BzzSpec.Version) {
 		return fmt.Errorf("version mismatch %d (!= %d)", rhs.Version, BzzSpec.Version)
 	}
-	fmt.Printf("check handshake %v\n", rhs.Capabilities.get(0))
 	// temporary check for valid capability settings, legacy full/light
-	if !isFullCapability(rhs.Capabilities.get(0)) && !isLightCapability(rhs.Capabilities.get(0)) {
-		return fmt.Errorf("invalid capabilities setting: %s", rhs.Capabilities)
+	if !isFullCapability(rhs.Addr.Capabilities.get(0)) && !isLightCapability(rhs.Addr.Capabilities.get(0)) {
+		return fmt.Errorf("invalid capabilities setting: %s", rhs.Addr.Capabilities)
 	}
 	return nil
 }
@@ -384,18 +383,16 @@ func (b *Bzz) GetOrCreateHandshake(peerID enode.ID) (*HandshakeMsg, bool) {
 	handshake, found := b.handshakes[peerID]
 	if !found {
 		handshake = &HandshakeMsg{
-			Version:      uint64(BzzSpec.Version),
-			NetworkID:    b.NetworkID,
-			Addr:         b.localAddr,
-			Capabilities: b.Capabilities,
-			init:         make(chan bool, 1),
-			done:         make(chan struct{}),
+			Version:   uint64(BzzSpec.Version),
+			NetworkID: b.NetworkID,
+			Addr:      b.localAddr,
+			init:      make(chan bool, 1),
+			done:      make(chan struct{}),
 		}
 		// when handhsake is first created for a remote peer
 		// it is initialised with the init
 		handshake.init <- true
 		b.handshakes[peerID] = handshake
 	}
-
 	return handshake, found
 }

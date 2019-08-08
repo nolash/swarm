@@ -14,7 +14,7 @@ import (
 type BzzAddr struct {
 	OAddr        []byte
 	UAddr        []byte
-	capabilities *Capabilities
+	Capabilities *Capabilities
 }
 
 // Address implements OverlayPeer interface to be used in Overlay.
@@ -53,7 +53,7 @@ func (a *BzzAddr) String() string {
 
 // WithCapabilities is a chainable method that enables setting Capabilities on a peer
 func (a *BzzAddr) WithCapabilities(c *Capabilities) *BzzAddr {
-	a.capabilities = c
+	a.Capabilities = c
 	return a
 }
 

@@ -212,7 +212,7 @@ func (k *Kademlia) Register(peers ...*BzzAddr) error {
 // blindly add index to
 func (k *Kademlia) addToIndex(p *BzzAddr) {
 	for s, v := range k.capabilityIndex {
-		if v.Match(p.capabilities) {
+		if v.Match(p.Capabilities) {
 			k.capabilityIndex[s].db, _, _ = pot.Add(v.db, p, Pof)
 		}
 	}
