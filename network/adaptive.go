@@ -95,7 +95,7 @@ func NewCapabilities() *Capabilities {
 	}
 }
 
-func (c *Capabilities) Has(capsCompare *Capabilities) bool {
+func (c *Capabilities) Match(capsCompare *Capabilities) bool {
 	for _, capCompare := range capsCompare.Caps {
 
 		// if queryied id doesn't exist in object we can nay right away

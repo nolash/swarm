@@ -81,14 +81,16 @@ func NewKadParams() *KadParams {
 	}
 }
 
+// index providing quick access to all peers having a certain capability set
 type kademliaCapabilityIndex struct {
-	capabilities *Capabilities
-	db           *pot.Pot
+	*Capabilities
+	db *pot.Pot
 }
 
-func NewKademliaCapabilityIndex(c *Capabilities) *kademliaCapabilityIndex {
+// NewKademliaCapabilityIndex creates a new capability index with a copy the provided capabilities array
+func NewKademliaCapabilityIndex(c Capabilities) *kademliaCapabilityIndex {
 	return &kademliaCapabilityIndex{
-		capabilities: c,
+		Capabilities: &c,
 		db:           pot.NewPot(nil, 0),
 	}
 }
@@ -125,10 +127,10 @@ func NewKademlia(addr []byte, params *KadParams) *Kademlia {
 	capabilityIndex := make(map[string]*kademliaCapabilityIndex)
 	fullCaps := NewCapabilities()
 	fullCaps.add(fullCapability)
-	capabilityIndex["full"] = NewKademliaCapabilityIndex(fullCaps)
+	capabilityIndex["full"] = NewKademliaCapabilityIndex(*fullCaps)
 	lightCaps := NewCapabilities()
 	lightCaps.add(lightCapability)
-	capabilityIndex["light"] = NewKademliaCapabilityIndex(lightCaps)
+	capabilityIndex["light"] = NewKademliaCapabilityIndex(*lightCaps)
 	return &Kademlia{
 		base:            addr,
 		KadParams:       params,
@@ -172,7 +174,7 @@ func (k *Kademlia) Register(peers ...*BzzAddr) error {
 
 	metrics.GetOrRegisterCounter("kad.register", nil).Inc(1)
 
-	var known, size int
+	var size int
 	for _, p := range peers {
 		log.Trace("kademlia trying to register", "addr", p)
 		// error if self received, peer should know better
@@ -180,8 +182,7 @@ func (k *Kademlia) Register(peers ...*BzzAddr) error {
 		if bytes.Equal(p.Address(), k.base) {
 			return fmt.Errorf("add peers: %x is self", k.base)
 		}
-		var found bool
-		k.addrs, _, found, _ = pot.Swap(k.addrs, p, Pof, func(v pot.Val) pot.Val {
+		k.addrs, _, _, _ = pot.Swap(k.addrs, p, Pof, func(v pot.Val) pot.Val {
 			// if not found
 			if v == nil {
 				log.Trace("registering new peer", "addr", p)
@@ -200,14 +201,21 @@ func (k *Kademlia) Register(peers ...*BzzAddr) error {
 
 			return v
 		})
-		if found {
-			known++
-		}
+		k.addToIndex(p)
 		size++
 	}
 
 	k.setNeighbourhoodDepth()
 	return nil
+}
+
+// blindly add index to
+func (k *Kademlia) addToIndex(p *BzzAddr) {
+	for s, v := range k.capabilityIndex {
+		if v.Match(p.capabilities) {
+			k.capabilityIndex[s].db, _, _ = pot.Add(v.db, p, Pof)
+		}
+	}
 }
 
 // SuggestPeer returns an unconnected peer address as a peer suggestion for connection
@@ -342,7 +350,8 @@ func (k *Kademlia) On(p *Peer) (uint8, bool) {
 		// found among live peers, do nothing
 		return v
 	})
-	if ins && !p.BzzPeer.LightNode {
+	//if ins && !p.BzzPeer.LightNode {
+	if ins {
 		a := newEntry(p.BzzAddr)
 		a.conn = p
 		// insert new online peer into addrs
@@ -429,27 +438,27 @@ func (k *Kademlia) SubscribeToNeighbourhoodDepthChange() (c <-chan struct{}, uns
 func (k *Kademlia) Off(p *Peer) {
 	k.lock.Lock()
 	defer k.lock.Unlock()
-	var del bool
-	if !p.BzzPeer.LightNode {
-		k.addrs, _, _, _ = pot.Swap(k.addrs, p, Pof, func(v pot.Val) pot.Val {
-			// v cannot be nil, must check otherwise we overwrite entry
-			if v == nil {
-				panic(fmt.Sprintf("connected peer not found %v", p))
-			}
-			del = true
-			return newEntry(p.BzzAddr)
-		})
-	} else {
-		del = true
-	}
+	//	var del bool
+	//	if !p.BzzPeer.LightNode {
+	//		k.addrs, _, _, _ = pot.Swap(k.addrs, p, Pof, func(v pot.Val) pot.Val {
+	//			// v cannot be nil, must check otherwise we overwrite entry
+	//			if v == nil {
+	//				panic(fmt.Sprintf("connected peer not found %v", p))
+	//			}
+	//			del = true
+	//			return newEntry(p.BzzAddr)
+	//		})
+	//	} else {
+	//		del = true
+	//	}
 
-	if del {
-		k.conns, _, _, _ = pot.Swap(k.conns, p, Pof, func(_ pot.Val) pot.Val {
-			// v cannot be nil, but no need to check
-			return nil
-		})
-		k.setNeighbourhoodDepth()
-	}
+	//	if del {
+	k.conns, _, _, _ = pot.Swap(k.conns, p, Pof, func(_ pot.Val) pot.Val {
+		// v cannot be nil, but no need to check
+		return nil
+	})
+	k.setNeighbourhoodDepth()
+	//	}
 }
 
 // EachConn is an iterator with args (base, po, f) applies f to each live peer

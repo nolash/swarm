@@ -115,7 +115,7 @@ func TestCapabilitiesQuery(t *testing.T) {
 	capCompare.Set(2)
 	capCompare.Set(8)
 	capsCompare.add(capCompare)
-	if caps.Has(capsCompare) {
+	if caps.Match(capsCompare) {
 		t.Fatalf("Expected cCompare with mismatch length to fail; %s != %s", capsCompare, caps)
 	}
 
@@ -123,23 +123,23 @@ func TestCapabilitiesQuery(t *testing.T) {
 	capCompare = NewCapability(42, 9)
 	capCompare.Set(2)
 	capsCompare.add(capCompare)
-	if !caps.Has(capsCompare) {
+	if !caps.Match(capsCompare) {
 		t.Fatalf("Expected %s to match %s", capsCompare, caps)
 	}
 
 	capCompare = NewCapability(1, 3)
 	capsCompare.add(capCompare)
-	if !caps.Has(capsCompare) {
+	if !caps.Match(capsCompare) {
 		t.Fatalf("Expected %s to match %s", capsCompare, caps)
 	}
 
 	capCompare.Set(1)
-	if !caps.Has(capsCompare) {
+	if !caps.Match(capsCompare) {
 		t.Fatalf("Expected %s to match %s", capsCompare, caps)
 	}
 
 	capCompare.Set(2)
-	if caps.Has(capsCompare) {
+	if caps.Match(capsCompare) {
 		t.Fatalf("Expected %s not to match %s", capsCompare, caps)
 	}
 

@@ -57,10 +57,6 @@ func (a *BzzAddr) WithCapabilities(c *Capabilities) *BzzAddr {
 	return a
 }
 
-func (a *BzzAddr) HasCapabilities(c *Capabilities) bool {
-
-}
-
 // RandomAddr is a utility method generating an address from a public key
 func RandomAddr() *BzzAddr {
 	key, err := crypto.GenerateKey()

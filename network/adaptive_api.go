@@ -31,9 +31,9 @@ func (a *CapabilitiesAPI) IsRegisteredCapability(id CapabilityId) (bool, error) 
 	return a.get(id) != nil, nil
 }
 
-// MatchCapability returns true if the Capability flag at the given index is set
+// HasCapability returns true if the Capability flag at the given index is set
 // Fails with error if the Capability is not registered, or if the index is out of bounds
-func (a *CapabilitiesAPI) MatchCapability(id CapabilityId, idx int) (bool, error) {
+func (a *CapabilitiesAPI) HasCapability(id CapabilityId, idx int) (bool, error) {
 	c := a.get(id)
 	if c == nil {
 		return false, fmt.Errorf("Capability %d not registered", id)
@@ -41,4 +41,9 @@ func (a *CapabilitiesAPI) MatchCapability(id CapabilityId, idx int) (bool, error
 		return false, fmt.Errorf("Capability %d idx %d out of range", id, idx)
 	}
 	return c.Cap[idx], nil
+}
+
+// MatchCapability wraps Capabilities.Match to make available to RPC API calls
+func (a *CapabilitiesAPI) MatchCapability(c *Capabilities) (bool, error) {
+	return a.Capabilities.Match(c), nil
 }

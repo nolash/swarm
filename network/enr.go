@@ -74,9 +74,9 @@ func getENRBzzPeer(p *p2p.Peer, rw p2p.MsgReadWriter, spec *protocols.Spec) *Bzz
 
 	// build the peer using the retrieved data
 	return &BzzPeer{
-		Peer:      protocols.NewPeer(p, rw, spec),
-		LightNode: bool(lightnode),
-		BzzAddr:   addr,
+		Peer: protocols.NewPeer(p, rw, spec),
+		//LightNode: bool(lightnode),
+		BzzAddr: addr,
 	}
 }
 
