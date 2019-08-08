@@ -310,7 +310,7 @@ type BzzPeer struct {
 	*protocols.Peer           // represents the connection for online peers
 	*BzzAddr                  // remote address -> implements Addr interface = protocols.Peer
 	lastActive      time.Time // time is updated whenever mutexes are releasing
-	LightNode       bool
+	//LightNode       bool
 }
 
 func NewBzzPeer(p *protocols.Peer) *BzzPeer {

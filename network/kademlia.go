@@ -97,7 +97,7 @@ func NewKademliaCapabilityIndex(c *Capabilities) *kademliaCapabilityIndex {
 type Kademlia struct {
 	lock            sync.RWMutex
 	*KadParams      // Kademlia configuration parameters
-	capabilityIndex map[string]*pot.Pot
+	capabilityIndex map[string]*kademliaCapabilityIndex
 	base            []byte          // immutable baseaddress of the table
 	addrs           *pot.Pot        // pots container for known peer addresses
 	conns           *pot.Pot        // pots container for live peer connections
@@ -122,11 +122,19 @@ func NewKademlia(addr []byte, params *KadParams) *Kademlia {
 	if params == nil {
 		params = NewKadParams()
 	}
+	capabilityIndex := make(map[string]*kademliaCapabilityIndex)
+	fullCaps := NewCapabilities()
+	fullCaps.add(fullCapability)
+	capabilityIndex["full"] = NewKademliaCapabilityIndex(fullCaps)
+	lightCaps := NewCapabilities()
+	lightCaps.add(lightCapability)
+	capabilityIndex["light"] = NewKademliaCapabilityIndex(lightCaps)
 	return &Kademlia{
-		base:      addr,
-		KadParams: params,
-		addrs:     pot.NewPot(nil, 0),
-		conns:     pot.NewPot(nil, 0),
+		base:            addr,
+		KadParams:       params,
+		capabilityIndex: capabilityIndex,
+		addrs:           pot.NewPot(nil, 0),
+		conns:           pot.NewPot(nil, 0),
 	}
 }
 
