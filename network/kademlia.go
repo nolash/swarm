@@ -484,8 +484,8 @@ func (k *Kademlia) eachConn(base []byte, c *Capabilities, o int, f func(*Peer, i
 			return true
 		}
 		if c != nil {
-			entry := val.(*BzzAddr)
-			if !c.Match(entry.Capabilities) {
+			entry := val.(*Peer)
+			if !entry.Capabilities.Match(c) {
 				return true
 			}
 		}

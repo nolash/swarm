@@ -2,7 +2,6 @@ package network
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -220,39 +219,68 @@ func TestCapabilitiesRLP(t *testing.T) {
 }
 
 func TestAdaptiveKademlia(t *testing.T) {
-	cap := NewCapability(42, 13)
-	caps := NewCapabilities()
-	caps.add(cap)
+	capPeer := NewCapability(42, 13)
+	capPeer.Set(1)
+	capPeer.Set(8)
+	capsPeer := NewCapabilities()
+	capsPeer.add(capPeer)
+
+	capCompare := NewCapability(42, 13)
+	capCompare.Set(1)
+	capsCompare := NewCapabilities()
+	capsCompare.add(capCompare)
 
 	selfAddr := RandomAddr()
 	kadParams := NewKadParams()
 	k := NewKademlia(selfAddr.Address(), kadParams)
 
+	// Add the peer ot the kademlia and switch it on
+	ap, err := newAdaptivePeer(capsPeer, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = k.Register(ap.BzzAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k.On(ap) // TODO why is this a method on the kademlia for a peer that already has a kademlia pointer
+
+	found := false
+	k.EachConn(selfAddr.Address(), 255, func(p *Peer, po int) bool {
+		found = true
+		return true
+	})
+	if !found {
+		t.Fatalf("Expected conn to returned: cap %s should be in set cap %s", capPeer, capCompare)
+	}
+
+	found = false
+	k.EachConnFiltered(selfAddr.Address(), capsCompare, 255, func(p *Peer, po int) bool {
+		found = true
+		return true
+	})
+	if !found {
+		t.Fatalf("Expected conn to be returned: cap %s should be in set cap %s", capPeer, capCompare)
+	}
+
+	capCompare.Set(2)
+	k.EachConnFiltered(selfAddr.Address(), capsCompare, 255, func(p *Peer, po int) bool {
+		t.Fatalf("Expected no returned conn: cap %s should not be in set cap %s", capPeer, capCompare)
+		return true
+	})
+}
+
+func newAdaptivePeer(caps *Capabilities, k *Kademlia) (*Peer, error) {
 	// create the peer that fits the kademlia record
 	// it's quite a bit of work
 	peerPrivKey, err := crypto.GenerateKey()
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	peerEnodeId := enode.PubkeyToIDV4(&peerPrivKey.PublicKey)
 	peerP2p := p2p.NewPeer(peerEnodeId, "foo", []p2p.Cap{})
 	peerProto := protocols.NewPeer(peerP2p, nil, nil)
 	peerBzz := NewBzzPeer(peerProto)
 	peerBzz.WithCapabilities(caps)
-	peerDisc := NewPeer(peerBzz, k)
-
-	// Add the peer ot the kademlia and switch it on
-	err = k.Register(peerBzz.BzzAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	depth, changed := k.On(peerDisc) // TODO why is this a method on the kademlia for a peer that already has a kademlia pointer
-	fmt.Printf("depth: %d, changed: %v\n", depth, changed)
-
-	k.EachConn(selfAddr.Address(), 255, func(p *Peer, po int) bool {
-		fmt.Printf("peer in %p\n", p)
-		return true
-	})
-	fmt.Printf("peer out %p\n", peerDisc)
-
+	return NewPeer(peerBzz, k), nil
 }
