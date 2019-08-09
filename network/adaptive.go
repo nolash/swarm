@@ -95,6 +95,7 @@ func NewCapabilities() *Capabilities {
 	}
 }
 
+// Match returns true if all bits set in the argument is also set in the receiver
 func (c *Capability) Match(capCompare *Capability) bool {
 	if len(c.Cap) != len(capCompare.Cap) {
 		return false

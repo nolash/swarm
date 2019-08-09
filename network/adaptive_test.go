@@ -232,8 +232,12 @@ func TestAdaptiveKademlia(t *testing.T) {
 
 	capOther := NewCapability(42, 13)
 	capOther.Set(1)
-	capOther.Set(8)
 	k.RegisterCapabilityIndex("other", *capOther)
+
+	capOtherCompare := NewCapability(42, 13)
+	capOtherCompare.Set(1)
+	capOtherCompare.Set(8)
+	k.RegisterCapabilityIndex("other_comp", *capOtherCompare)
 
 	ap, err := newAdaptivePeer(fullCapability, k)
 	if err != nil {
@@ -287,6 +291,55 @@ func TestAdaptiveKademlia(t *testing.T) {
 		t.Fatalf("Expected no conn to return after query with 'light' filter")
 		return false
 	})
+
+	apOther, err := newAdaptivePeer(capOther, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found = false
+	k.EachAddr(selfAddr.Address(), 255, func(_ *BzzAddr, _ int) bool {
+		found = true
+		return true
+	})
+	if !found {
+		t.Fatalf("Expected addr to return after query without filter")
+	}
+
+	found = false
+	k.EachAddrFiltered(selfAddr.Address(), "full", 255, func(a *BzzAddr, _ int) bool {
+		if !bytes.Equal(a.Over(), ap.Over()) {
+			t.Fatalf("Expected peer returned with addr %v, got %v", ap.Over(), a.Over())
+		}
+		found = true
+		return true
+	})
+	if !found {
+		t.Fatalf("Expected addr to return after query with 'full' filter")
+	}
+
+	found = false
+	k.EachAddrFiltered(selfAddr.Address(), "other", 255, func(a *BzzAddr, _ int) bool {
+		if !bytes.Equal(a.Over(), apOther.Over()) {
+			t.Fatalf("Expected peer returned with addr %v, got %v", ap.Over(), a.Over())
+		}
+		found = true
+		return true
+	})
+	if !found {
+		t.Fatalf("Expected addr to return after query with 'other' filter")
+	}
+
+	found = false
+	k.EachAddrFiltered(selfAddr.Address(), "other_comp", 255, func(a *BzzAddr, _ int) bool {
+		if !bytes.Equal(a.Over(), apOther.Over()) {
+			t.Fatalf("Expected peer returned with addr %v, got %v", ap.Over(), a.Over())
+		}
+		found = true
+		return true
+	})
+	if !found {
+		t.Fatalf("Expected addr to return after query with 'other_comp' filter")
+	}
 }
 
 func newAdaptivePeer(cap *Capability, k *Kademlia) (*Peer, error) {

@@ -163,6 +163,7 @@ func (k *Kademlia) addToCapabilityIndex(p interface{}, connected bool) {
 	}
 	for s, idxItem := range k.capabilityIndex {
 		for _, vCap := range eAddr.Capabilities.Caps {
+			log.Debug("in add to capability compare", "idx", s, "peer", vCap, "idx", idxItem.Capability)
 			if idxItem.Id != vCap.Id {
 				continue
 			}
@@ -541,6 +542,7 @@ func (k *Kademlia) EachAddrFiltered(base []byte, capKey string, o int, f func(*B
 	if !ok {
 		return fmt.Errorf("Unregistered capability index '%s'", capKey)
 	}
+	log.Debug("filter with capname", "key", capKey, "cap", c)
 	k.eachAddr(base, c.addrs, o, f)
 	return nil
 }
