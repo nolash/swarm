@@ -372,7 +372,6 @@ func binStr(a *BzzAddr) string {
 }
 
 func TestSuggestPeerFindPeers(t *testing.T) {
-	t.Skip("temporarily deactivated until capabilities and handshake basics pass")
 	tk := newTestKademlia(t, "00000000")
 	tk.On("00100000")
 	tk.checkSuggestPeer("<nil>", 0, false)

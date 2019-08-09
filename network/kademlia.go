@@ -438,27 +438,23 @@ func (k *Kademlia) SubscribeToNeighbourhoodDepthChange() (c <-chan struct{}, uns
 func (k *Kademlia) Off(p *Peer) {
 	k.lock.Lock()
 	defer k.lock.Unlock()
-	//	var del bool
-	//	if !p.BzzPeer.LightNode {
-	//		k.addrs, _, _, _ = pot.Swap(k.addrs, p, Pof, func(v pot.Val) pot.Val {
-	//			// v cannot be nil, must check otherwise we overwrite entry
-	//			if v == nil {
-	//				panic(fmt.Sprintf("connected peer not found %v", p))
-	//			}
-	//			del = true
-	//			return newEntry(p.BzzAddr)
-	//		})
-	//	} else {
-	//		del = true
-	//	}
-
-	//	if del {
-	k.conns, _, _, _ = pot.Swap(k.conns, p, Pof, func(_ pot.Val) pot.Val {
-		// v cannot be nil, but no need to check
-		return nil
+	var del bool
+	k.addrs, _, _, _ = pot.Swap(k.addrs, p, Pof, func(v pot.Val) pot.Val {
+		// v cannot be nil, must check otherwise we overwrite entry
+		if v == nil {
+			panic(fmt.Sprintf("connected peer not found %v", p))
+		}
+		del = true
+		return newEntry(p.BzzAddr)
 	})
-	k.setNeighbourhoodDepth()
-	//	}
+
+	if del {
+		k.conns, _, _, _ = pot.Swap(k.conns, p, Pof, func(_ pot.Val) pot.Val {
+			// v cannot be nil, but no need to check
+			return nil
+		})
+		k.setNeighbourhoodDepth()
+	}
 }
 
 // EachConn is an iterator with args (base, po, f) applies f to each live peer
