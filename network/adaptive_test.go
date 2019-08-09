@@ -219,125 +219,144 @@ func TestCapabilitiesRLP(t *testing.T) {
 }
 
 //
-// Test cases:
-// 1. Full and light:
-//    - peer is light, search for light -> fail
-//    - peer is light, search for full -> fail
-// 2. Peer and kademlia have one capability entry with same id
 func TestAdaptiveKademlia(t *testing.T) {
 
+	// create own address
 	selfAddr := RandomAddr()
 	kadParams := NewKadParams()
 	k := NewKademlia(selfAddr.Address(), kadParams)
 
+	// create a custom capability and add it to index
+	// add it to the capability index
+	// so peers added after this will be added to the index, too
 	capOther := NewCapability(42, 13)
 	capOther.Set(1)
 	k.RegisterCapabilityIndex("other", *capOther)
 
+	// create another custom capability and add it to index
+	// a peer with capOther will match this as a filter, but not the other way around;
+	// 42:0100000000000 satisfies 42:0100000010000, but
+	// 42:0100000010000 does not satisfy 42:0100000000000
 	capOtherCompare := NewCapability(42, 13)
 	capOtherCompare.Set(1)
 	capOtherCompare.Set(8)
 	k.RegisterCapabilityIndex("other_comp", *capOtherCompare)
 
+	// Create a "full" peer
 	ap, err := newAdaptivePeer(fullCapability, k)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	found := false
+	// Check the "known peers" pot database for the peer entry
+	// Iterator without filter should return the peer
+	found := 0
 	k.EachAddr(selfAddr.Address(), 255, func(_ *BzzAddr, _ int) bool {
-		found = true
+		found += 1
 		return true
 	})
-	if !found {
+	if found != 1 {
 		t.Fatalf("Expected addr to return after query without filter")
 	}
 
-	found = false
+	// Iterator with "full" filter should return the peer
+	found = 0
 	k.EachAddrFiltered(selfAddr.Address(), "full", 255, func(_ *BzzAddr, _ int) bool {
-		found = true
+		found += 1
 		return true
 	})
-	if !found {
+	if found != 1 {
 		t.Fatalf("Expected addrto return after query with 'full' filter")
 	}
 
+	// Iterator with "light" filter should not return the peer
 	k.EachAddrFiltered(selfAddr.Address(), "light", 255, func(_ *BzzAddr, _ int) bool {
 		t.Fatalf("Expected no addr to return after query with 'light' filter")
 		return false
 	})
 
-	// Connect the peer and check the conn database
+	// Add the peer to the connected pot database
+	// And do the equivalent lookup against that database
+	// This should succeed
 	k.On(ap)
-	found = false
+	found = 0
 	k.EachConn(selfAddr.Address(), 255, func(p *Peer, po int) bool {
-		found = true
+		found += 1
 		return true
 	})
-	if !found {
+	if found != 1 {
 		t.Fatalf("Expected conn to return after query without filter")
 	}
 
-	found = false
+	// This should succeed
+	found = 0
 	k.EachConnFiltered(selfAddr.Address(), "full", 255, func(p *Peer, po int) bool {
-		found = true
+		found += 1
 		return true
 	})
-	if !found {
+	if found != 1 {
 		t.Fatalf("Expected conn to return after query with 'full' filter")
 	}
 
+	// This should fail
 	k.EachConnFiltered(selfAddr.Address(), "light", 255, func(p *Peer, po int) bool {
 		t.Fatalf("Expected no conn to return after query with 'light' filter")
 		return false
 	})
 
+	// Create a peer with the custom capability
 	apOther, err := newAdaptivePeer(capOther, k)
 	if err != nil {
 		t.Fatal(err)
 	}
-	found = false
+
+	// Both peers should be returned
+	// Iterator without filter should return BOTH peers
+	found = 0
 	k.EachAddr(selfAddr.Address(), 255, func(_ *BzzAddr, _ int) bool {
-		found = true
+		found += 1
 		return true
 	})
-	if !found {
-		t.Fatalf("Expected addr to return after query without filter")
+	if found != 2 {
+		t.Fatalf("Expected two addrs to return after query without filter")
 	}
 
-	found = false
+	// Iterator with "full" filter should ONLY return the "full" capability peer
+	found = 0
 	k.EachAddrFiltered(selfAddr.Address(), "full", 255, func(a *BzzAddr, _ int) bool {
 		if !bytes.Equal(a.Over(), ap.Over()) {
 			t.Fatalf("Expected peer returned with addr %v, got %v", ap.Over(), a.Over())
 		}
-		found = true
+		found += 1
 		return true
 	})
-	if !found {
+	if found != 1 {
 		t.Fatalf("Expected addr to return after query with 'full' filter")
 	}
 
-	found = false
+	// Iterator with "other" filter should ONLY return the "other" capability peer
+	found = 0
 	k.EachAddrFiltered(selfAddr.Address(), "other", 255, func(a *BzzAddr, _ int) bool {
 		if !bytes.Equal(a.Over(), apOther.Over()) {
 			t.Fatalf("Expected peer returned with addr %v, got %v", ap.Over(), a.Over())
 		}
-		found = true
+		found += 1
 		return true
 	})
-	if !found {
+	if found != 1 {
 		t.Fatalf("Expected addr to return after query with 'other' filter")
 	}
 
-	found = false
+	// Iterator with "other_comp" filter should ONLY return the "other" capability peer
+	found = 0
 	k.EachAddrFiltered(selfAddr.Address(), "other_comp", 255, func(a *BzzAddr, _ int) bool {
 		if !bytes.Equal(a.Over(), apOther.Over()) {
 			t.Fatalf("Expected peer returned with addr %v, got %v", ap.Over(), a.Over())
 		}
-		found = true
+		found += 1
 		return true
 	})
-	if !found {
+	if found != 1 {
 		t.Fatalf("Expected addr to return after query with 'other_comp' filter")
 	}
 }
