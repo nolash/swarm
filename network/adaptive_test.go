@@ -218,7 +218,7 @@ func TestCapabilitiesRLP(t *testing.T) {
 	}
 }
 
-//
+// TODO split up test per peer and capability combination
 func TestAdaptiveKademlia(t *testing.T) {
 
 	// create own address
@@ -243,7 +243,7 @@ func TestAdaptiveKademlia(t *testing.T) {
 	k.RegisterCapabilityIndex("other_comp", *capOtherCompare)
 
 	// Create a "full" peer
-	ap, err := newAdaptivePeer(fullCapability, k)
+	ap, err := newAdaptivePeer(k, fullCapability)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +305,7 @@ func TestAdaptiveKademlia(t *testing.T) {
 	})
 
 	// Create a peer with the custom capability
-	apOther, err := newAdaptivePeer(capOther, k)
+	apOther, err := newAdaptivePeer(k, capOther)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,9 +359,54 @@ func TestAdaptiveKademlia(t *testing.T) {
 	if found != 1 {
 		t.Fatalf("Expected addr to return after query with 'other_comp' filter")
 	}
+
+	// Create a peer with a custom capability AND a full capability
+	apCombo, err := newAdaptivePeer(k, capOtherCompare, lightCapability)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Iterator with "other_comp" filter should ONLY return the "other" capability peer
+	found = 0
+	k.EachAddrFiltered(selfAddr.Address(), "other_comp", 255, func(a *BzzAddr, _ int) bool {
+		if !bytes.Equal(a.Over(), apCombo.Over()) && !bytes.Equal(a.Over(), apOther.Over()) {
+			t.Fatalf("Expected peer returned with addr %v, got %v", a.Over(), apCombo.Over())
+		}
+		found += 1
+		return true
+	})
+	if found != 2 {
+		t.Fatalf("Expected two addrs to return after query with 'other_comp' filter")
+	}
+
+	// Iterator with "other_comp" filter should ONLY return the "other" capability peer
+	found = 0
+	k.EachAddrFiltered(selfAddr.Address(), "other", 255, func(a *BzzAddr, _ int) bool {
+		if !bytes.Equal(a.Over(), apOther.Over()) {
+			t.Fatalf("Expected peer returned with addr %v, got %v", a.Over(), apOther.Over())
+		}
+		found += 1
+		return true
+	})
+	if found != 1 {
+		t.Fatalf("Expected one addrs to return after query with 'other' filter")
+	}
+
+	// Iterator with "other_comp" filter should ONLY return the "other" capability peer
+	found = 0
+	k.EachAddrFiltered(selfAddr.Address(), "light", 255, func(a *BzzAddr, _ int) bool {
+		if !bytes.Equal(a.Over(), apCombo.Over()) {
+			t.Fatalf("Expected peer returned with addr %v, got %v", a.Over(), apCombo.Over())
+		}
+		found += 1
+		return true
+	})
+	if found != 1 {
+		t.Fatalf("Expected two addrs to return after query with 'light' filter")
+	}
 }
 
-func newAdaptivePeer(cap *Capability, k *Kademlia) (*Peer, error) {
+func newAdaptivePeer(k *Kademlia, capabilities ...*Capability) (*Peer, error) {
 	// create the peer that fits the kademlia record
 	// it's quite a bit of work
 	peerPrivKey, err := crypto.GenerateKey()
@@ -373,7 +418,9 @@ func newAdaptivePeer(cap *Capability, k *Kademlia) (*Peer, error) {
 	peerProto := protocols.NewPeer(peerP2p, nil, nil)
 	peerBzz := NewBzzPeer(peerProto)
 	caps := NewCapabilities()
-	caps.add(cap)
+	for _, cap := range capabilities {
+		caps.add(cap)
+	}
 	peerBzz.WithCapabilities(caps)
 	err = k.Register(peerBzz.BzzAddr)
 	if err != nil {
