@@ -463,16 +463,31 @@ func (k *Kademlia) Off(p *Peer) {
 func (k *Kademlia) EachConn(base []byte, o int, f func(*Peer, int) bool) {
 	k.lock.RLock()
 	defer k.lock.RUnlock()
-	k.eachConn(base, o, f)
+	k.eachConn(base, nil, o, f)
 }
 
-func (k *Kademlia) eachConn(base []byte, o int, f func(*Peer, int) bool) {
+// EachConn is an iterator with args (base, po, f) applies f to each live peer
+// that has proximity order po or less as measured from the base
+// if base is nil, kademlia base address is used
+func (k *Kademlia) EachConnFiltered(base []byte, c *Capabilities, o int, f func(*Peer, int) bool) {
+	k.lock.RLock()
+	defer k.lock.RUnlock()
+	k.eachConn(base, c, o, f)
+}
+
+func (k *Kademlia) eachConn(base []byte, c *Capabilities, o int, f func(*Peer, int) bool) {
 	if len(base) == 0 {
 		base = k.base
 	}
 	k.conns.EachNeighbour(base, Pof, func(val pot.Val, po int) bool {
 		if po > o {
 			return true
+		}
+		if c != nil {
+			entry := val.(*BzzAddr)
+			if !c.Match(entry.Capabilities) {
+				return true
+			}
 		}
 		return f(val.(*Peer), po)
 	})
@@ -898,7 +913,8 @@ func (k *Kademlia) connectedNeighbours(peers [][]byte) (got bool, n int, missing
 	// in order deepest to shallowest compared to the kademlia base address
 	// all bins (except self) are included (0 <= bin <= 255)
 	depth := depthForPot(k.conns, k.NeighbourhoodSize, k.base)
-	k.eachConn(nil, 255, func(p *Peer, po int) bool {
+	// TODO capabilities set to nil, should probably have input
+	k.eachConn(nil, nil, 255, func(p *Peer, po int) bool {
 		if po < depth {
 			return false
 		}
