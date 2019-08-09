@@ -95,6 +95,19 @@ func NewCapabilities() *Capabilities {
 	}
 }
 
+func (c *Capability) Match(capCompare *Capability) bool {
+	if len(c.Cap) != len(capCompare.Cap) {
+		return false
+	}
+	// on the first occurence of false where query has true we can fail
+	for i, flag := range capCompare.Cap {
+		if flag && !c.Cap[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *Capabilities) Match(capsCompare *Capabilities) bool {
 	for _, capCompare := range capsCompare.Caps {
 
@@ -102,15 +115,9 @@ func (c *Capabilities) Match(capsCompare *Capabilities) bool {
 		cap := c.get(capCompare.Id)
 		if cap == nil {
 			return false
-		} else if len(cap.Cap) != len(capCompare.Cap) {
-			return false
 		}
-
-		// on the first occurence of false where query has true we can fail
-		for i, flag := range capCompare.Cap {
-			if flag && !cap.Cap[i] {
-				return false
-			}
+		if !cap.Match(capCompare) {
+			return false
 		}
 	}
 	return true

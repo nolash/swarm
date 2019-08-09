@@ -55,17 +55,6 @@ node from the other.
 
 var Pof = pot.DefaultPof(256)
 
-// Temporary variables representing soon-to-be legacy full/light node categories
-var (
-	capabilitiesIndexFull  = NewCapabilities()
-	capabilitiesIndexLight = NewCapabilities()
-)
-
-func init() {
-	capabilitiesIndexFull.add(newFullCapability())
-	capabilitiesIndexLight.add(newLightCapability())
-}
-
 // KadParams holds the config params for Kademlia
 type KadParams struct {
 	// adjustable parameters
@@ -95,17 +84,17 @@ func NewKadParams() *KadParams {
 
 // index providing quick access to all peers having a certain capability set
 type capabilityIndex struct {
-	*Capabilities
+	*Capability
 	conns *pot.Pot
 	addrs *pot.Pot
 }
 
 // NewCapabilityIndex creates a new capability index with a copy the provided capabilities array
-func NewCapabilityIndex(c Capabilities) *capabilityIndex {
+func NewCapabilityIndex(c Capability) *capabilityIndex {
 	return &capabilityIndex{
-		Capabilities: &c,
-		conns:        pot.NewPot(nil, 0),
-		addrs:        pot.NewPot(nil, 0),
+		Capability: &c,
+		conns:      pot.NewPot(nil, 0),
+		addrs:      pot.NewPot(nil, 0),
 	}
 }
 
@@ -146,19 +135,19 @@ func NewKademlia(addr []byte, params *KadParams) *Kademlia {
 		conns:           pot.NewPot(nil, 0),
 	}
 
-	k.RegisterCapabilityIndex("full", capabilitiesIndexFull)
-	k.RegisterCapabilityIndex("light", capabilitiesIndexLight)
+	k.RegisterCapabilityIndex("full", *fullCapability)
+	k.RegisterCapabilityIndex("light", *lightCapability)
 	return k
 }
 
-func (k *Kademlia) RegisterCapabilityIndex(s string, c *Capabilities) error {
+func (k *Kademlia) RegisterCapabilityIndex(s string, c Capability) error {
 	if s == "" {
 		return errors.New("Cannot add index with empty string key")
 	} else if _, ok := k.capabilityIndex[s]; ok {
 		return fmt.Errorf("Capability index '%s' already exists", s)
 	}
 	log.Debug("Registered cap index", "s", s, "c", c)
-	k.capabilityIndex[s] = NewCapabilityIndex(*c)
+	k.capabilityIndex[s] = NewCapabilityIndex(c)
 	return nil
 }
 
@@ -172,13 +161,18 @@ func (k *Kademlia) addToCapabilityIndex(p interface{}, connected bool) {
 	} else {
 		eAddr = p.(*entry).BzzAddr
 	}
-	for s, v := range k.capabilityIndex {
-		if v.Match(eAddr.Capabilities) {
-			log.Debug("Added peer to capability index", "conn", connected, "s", s, "v", v.Caps, "p", p)
-			if connected {
-				k.capabilityIndex[s].conns, _, _ = pot.Add(v.conns, ePeer, Pof)
-			} else {
-				k.capabilityIndex[s].addrs, _, _ = pot.Add(v.addrs, newEntry(eAddr), Pof)
+	for s, idxItem := range k.capabilityIndex {
+		for _, vCap := range eAddr.Capabilities.Caps {
+			if idxItem.Id != vCap.Id {
+				continue
+			}
+			if idxItem.Match(vCap) {
+				log.Debug("Added peer to capability index", "conn", connected, "s", s, "v", vCap, "p", p)
+				if connected {
+					k.capabilityIndex[s].conns, _, _ = pot.Add(idxItem.conns, ePeer, Pof)
+				} else {
+					k.capabilityIndex[s].addrs, _, _ = pot.Add(idxItem.addrs, newEntry(eAddr), Pof)
+				}
 			}
 		}
 	}

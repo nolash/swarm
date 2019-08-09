@@ -233,11 +233,9 @@ func TestAdaptiveKademlia(t *testing.T) {
 	capOther := NewCapability(42, 13)
 	capOther.Set(1)
 	capOther.Set(8)
-	capsOther := NewCapabilities()
-	capsOther.add(capOther)
-	k.RegisterCapabilityIndex("other", capsOther)
+	k.RegisterCapabilityIndex("other", *capOther)
 
-	ap, err := newAdaptivePeer(capabilitiesIndexFull, k)
+	ap, err := newAdaptivePeer(fullCapability, k)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +289,7 @@ func TestAdaptiveKademlia(t *testing.T) {
 	})
 }
 
-func newAdaptivePeer(caps *Capabilities, k *Kademlia) (*Peer, error) {
+func newAdaptivePeer(cap *Capability, k *Kademlia) (*Peer, error) {
 	// create the peer that fits the kademlia record
 	// it's quite a bit of work
 	peerPrivKey, err := crypto.GenerateKey()
@@ -302,6 +300,8 @@ func newAdaptivePeer(caps *Capabilities, k *Kademlia) (*Peer, error) {
 	peerP2p := p2p.NewPeer(peerEnodeId, "foo", []p2p.Cap{})
 	peerProto := protocols.NewPeer(peerP2p, nil, nil)
 	peerBzz := NewBzzPeer(peerProto)
+	caps := NewCapabilities()
+	caps.add(cap)
 	peerBzz.WithCapabilities(caps)
 	err = k.Register(peerBzz.BzzAddr)
 	if err != nil {
