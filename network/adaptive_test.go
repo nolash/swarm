@@ -230,60 +230,65 @@ func TestAdaptiveKademlia(t *testing.T) {
 	kadParams := NewKadParams()
 	k := NewKademlia(selfAddr.Address(), kadParams)
 
+	capOther := NewCapability(42, 13)
+	capOther.Set(1)
+	capOther.Set(8)
+	capsOther := NewCapabilities()
+	capsOther.add(capOther)
+	k.RegisterCapabilityIndex("other", capsOther)
+
 	ap, err := newAdaptivePeer(capabilitiesIndexFull, k)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	found := false
+	k.EachAddr(selfAddr.Address(), 255, func(_ *BzzAddr, _ int) bool {
+		found = true
+		return true
+	})
+	if !found {
+		t.Fatalf("Expected addr to return after query without filter")
+	}
+
+	found = false
+	k.EachAddrFiltered(selfAddr.Address(), "full", 255, func(_ *BzzAddr, _ int) bool {
+		found = true
+		return true
+	})
+	if !found {
+		t.Fatalf("Expected addrto return after query with 'full' filter")
+	}
+
+	k.EachAddrFiltered(selfAddr.Address(), "light", 255, func(_ *BzzAddr, _ int) bool {
+		t.Fatalf("Expected no addr to return after query with 'light' filter")
+		return false
+	})
+
+	// Connect the peer and check the conn database
 	k.On(ap)
+	found = false
+	k.EachConn(selfAddr.Address(), 255, func(p *Peer, po int) bool {
+		found = true
+		return true
+	})
+	if !found {
+		t.Fatalf("Expected conn to return after query without filter")
+	}
 
-	//	capOne := NewCapability(42, 13)
-	//	capOne.Set(1)
-	//	capone.Set(8)
-	//	capsOne := NewCapabilities()
-	//	capsOne.add(capOne)
-	//	k.RegisterCapabilityIndex("one", *capsOne)
-	//
-	//	// Add the peer ot the kademlia and switch it on
-	//	ap, err := newAdaptivePeer(capsOne, k)
-	//	if err != nil {
-	//		t.Fatal(err)
-	//	}
-	//		//	k.On(ap) // TODO why is this a method on the kademlia for a peer that already has a kademlia pointer
-	//
-	//	found := false
-	//	k.EachConn(selfAddr.Address(), 255, func(p *Peer, po int) bool {
-	//		found = true
-	//		return true
-	//	})
-	//	if !found {
-	//		t.Fatalf("Expected conn to returned: cap %s should be in set cap %s", capPeer, capCompare)
-	//	}
-	//
-	//	found = false
-	//	k.EachConnFiltered(selfAddr.Address(), capsCompare, 255, func(p *Peer, po int) bool {
-	//		found = true
-	//		return true
-	//	})
-	//	if !found {
-	//		t.Fatalf("Expected conn to be returned: cap %s should be in set cap %s", capPeer, capCompare)
-	//	}
-	//
-	//	capCompare.Set(2)
-	//	k.EachConnFiltered(selfAddr.Address(), capsCompare, 255, func(p *Peer, po int) bool {
-	//		t.Fatalf("Expected no returned conn: cap %s should not be in set cap %s", capPeer, capCompare)
-	//		return true
-	//	})
-	//
-	//	//	capOther := NewCapability(666, 7)
-	//	//	capOther.Set(1)
-	//	//	capsOther := NewCapabilities()
-	//	//	capsOther.add(capOther)
-	//	//
-	//	capCompareOther := NewCapability(42, 13)
-	//	capCompareOther.Set(1)
-	//	capsCompareOther := NewCapabilities()
-	//	capsCompareOther.add(capCompareOther)
+	found = false
+	k.EachConnFiltered(selfAddr.Address(), "full", 255, func(p *Peer, po int) bool {
+		found = true
+		return true
+	})
+	if !found {
+		t.Fatalf("Expected conn to return after query with 'full' filter")
+	}
 
+	k.EachConnFiltered(selfAddr.Address(), "light", 255, func(p *Peer, po int) bool {
+		t.Fatalf("Expected no conn to return after query with 'light' filter")
+		return false
+	})
 }
 
 func newAdaptivePeer(caps *Capabilities, k *Kademlia) (*Peer, error) {

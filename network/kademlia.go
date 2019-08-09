@@ -96,14 +96,16 @@ func NewKadParams() *KadParams {
 // index providing quick access to all peers having a certain capability set
 type capabilityIndex struct {
 	*Capabilities
-	db *pot.Pot
+	conns *pot.Pot
+	addrs *pot.Pot
 }
 
 // NewCapabilityIndex creates a new capability index with a copy the provided capabilities array
 func NewCapabilityIndex(c Capabilities) *capabilityIndex {
 	return &capabilityIndex{
 		Capabilities: &c,
-		db:           pot.NewPot(nil, 0),
+		conns:        pot.NewPot(nil, 0),
+		addrs:        pot.NewPot(nil, 0),
 	}
 }
 
@@ -161,11 +163,23 @@ func (k *Kademlia) RegisterCapabilityIndex(s string, c *Capabilities) error {
 }
 
 // blindly add index to
-func (k *Kademlia) addToCapabilityIndex(p *BzzAddr) {
+func (k *Kademlia) addToCapabilityIndex(p interface{}, connected bool) {
+	var eAddr *BzzAddr
+	var ePeer *Peer
+	if connected {
+		ePeer = p.(*Peer)
+		eAddr = ePeer.BzzAddr
+	} else {
+		eAddr = p.(*entry).BzzAddr
+	}
 	for s, v := range k.capabilityIndex {
-		if v.Match(p.Capabilities) {
-			log.Debug("Added peer to capability index", "s", s, "v", v.Caps, "p", p)
-			k.capabilityIndex[s].db, _, _ = pot.Add(v.db, p, Pof)
+		if v.Match(eAddr.Capabilities) {
+			log.Debug("Added peer to capability index", "conn", connected, "s", s, "v", v.Caps, "p", p)
+			if connected {
+				k.capabilityIndex[s].conns, _, _ = pot.Add(v.conns, ePeer, Pof)
+			} else {
+				k.capabilityIndex[s].addrs, _, _ = pot.Add(v.addrs, newEntry(eAddr), Pof)
+			}
 		}
 	}
 }
@@ -231,7 +245,7 @@ func (k *Kademlia) Register(peers ...*BzzAddr) error {
 
 			return v
 		})
-		k.addToCapabilityIndex(p)
+		k.addToCapabilityIndex(newEntry(p), false)
 		size++
 	}
 
@@ -371,6 +385,7 @@ func (k *Kademlia) On(p *Peer) (uint8, bool) {
 		// found among live peers, do nothing
 		return v
 	})
+	k.addToCapabilityIndex(p, true)
 	//if ins && !p.BzzPeer.LightNode {
 	if ins {
 		a := newEntry(p.BzzAddr)
@@ -484,7 +499,7 @@ func (k *Kademlia) Off(p *Peer) {
 func (k *Kademlia) EachConn(base []byte, o int, f func(*Peer, int) bool) {
 	k.lock.RLock()
 	defer k.lock.RUnlock()
-	k.eachConn(base, k.conns, o, f)
+	k.eachConn(base, nil, o, f)
 }
 
 // EachConn is an iterator with args (base, po, f) applies f to each live peer
@@ -497,7 +512,7 @@ func (k *Kademlia) EachConnFiltered(base []byte, capKey string, o int, f func(*P
 	if !ok {
 		return fmt.Errorf("Unregistered capability index '%s'", capKey)
 	}
-	k.eachConn(base, c.db, o, f)
+	k.eachConn(base, c.conns, o, f)
 	return nil
 }
 
@@ -505,7 +520,9 @@ func (k *Kademlia) eachConn(base []byte, db *pot.Pot, o int, f func(*Peer, int) 
 	if len(base) == 0 {
 		base = k.base
 	}
-	//k.conns.EachNeighbour(base, Pof, func(val pot.Val, po int) bool {
+	if db == nil {
+		db = k.conns
+	}
 	db.EachNeighbour(base, Pof, func(val pot.Val, po int) bool {
 		if po > o {
 			return true
@@ -520,14 +537,28 @@ func (k *Kademlia) eachConn(base []byte, db *pot.Pot, o int, f func(*Peer, int) 
 func (k *Kademlia) EachAddr(base []byte, o int, f func(*BzzAddr, int) bool) {
 	k.lock.RLock()
 	defer k.lock.RUnlock()
-	k.eachAddr(base, o, f)
+	k.eachAddr(base, nil, o, f)
 }
 
-func (k *Kademlia) eachAddr(base []byte, o int, f func(*BzzAddr, int) bool) {
+func (k *Kademlia) EachAddrFiltered(base []byte, capKey string, o int, f func(*BzzAddr, int) bool) error {
+	k.lock.RLock()
+	defer k.lock.RUnlock()
+	c, ok := k.capabilityIndex[capKey]
+	if !ok {
+		return fmt.Errorf("Unregistered capability index '%s'", capKey)
+	}
+	k.eachAddr(base, c.addrs, o, f)
+	return nil
+}
+
+func (k *Kademlia) eachAddr(base []byte, db *pot.Pot, o int, f func(*BzzAddr, int) bool) {
 	if len(base) == 0 {
 		base = k.base
 	}
-	k.addrs.EachNeighbour(base, Pof, func(val pot.Val, po int) bool {
+	if db == nil {
+		db = k.addrs
+	}
+	db.EachNeighbour(base, Pof, func(val pot.Val, po int) bool {
 		if po > o {
 			return true
 		}
@@ -895,7 +926,7 @@ func (k *Kademlia) knowNeighbours(addrs [][]byte) (got bool, n int, missing [][]
 	pm := make(map[string]bool)
 	depth := depthForPot(k.conns, k.NeighbourhoodSize, k.base)
 	// create a map with all peers at depth and deeper known in the kademlia
-	k.eachAddr(nil, 255, func(p *BzzAddr, po int) bool {
+	k.eachAddr(nil, nil, 255, func(p *BzzAddr, po int) bool {
 		// in order deepest to shallowest compared to the kademlia base address
 		// all bins (except self) are included (0 <= bin <= 255)
 		if po < depth {
