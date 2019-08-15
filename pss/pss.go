@@ -101,6 +101,7 @@ type Params struct {
 	privateKey          *ecdsa.PrivateKey
 	SymKeyCacheCapacity int
 	AllowRaw            bool // If true, enables sending and receiving messages without builtin pss encryption
+	RPCDialer           func() (*rpc.Client, error)
 }
 
 // Sane defaults for Pss
@@ -120,7 +121,7 @@ func (params *Params) WithPrivateKey(privatekey *ecdsa.PrivateKey) *Params {
 // Pss is the top-level struct, which takes care of message sending, receiving, decryption and encryption, message handler dispatchers
 // and message forwarding. Implements node.Service
 type Pss struct {
-	*network.Kademlia // we can get the Kademlia address from this
+	baseAddr []byte
 	*KeyStore
 
 	privateKey *ecdsa.PrivateKey // pss can have it's own independent key
@@ -145,6 +146,9 @@ type Pss struct {
 	topicHandlerCaps   map[Topic]*handlerCaps // caches capabilities of each topic's handlers
 	topicHandlerCapsMu sync.RWMutex
 
+	rpcDialer func() (*rpc.Client, error)
+	kadRpc    *rpc.Client
+
 	// process
 	quitC chan struct{}
 }
@@ -157,16 +161,17 @@ func (p *Pss) String() string {
 //
 // In addition to params, it takes a swarm network Kademlia
 // and a FileStore storage for message cache storage.
-func New(k *network.Kademlia, params *Params) (*Pss, error) {
+func New(params *Params) (*Pss, error) {
 	if params.privateKey == nil {
 		return nil, errors.New("missing private key for pss")
+	} else if params.RPCDialer == nil {
+		return nil, errors.New("missing rpc dialer for pss")
 	}
 	c := p2p.Cap{
 		Name:    protocolName,
 		Version: protocolVersion,
 	}
 	ps := &Pss{
-		Kademlia: k,
 		KeyStore: loadKeyStore(),
 
 		privateKey: params.privateKey,
@@ -188,6 +193,8 @@ func New(k *network.Kademlia, params *Params) (*Pss, error) {
 				return sha3.NewLegacyKeccak256()
 			},
 		},
+
+		rpcDialer: params.RPCDialer,
 	}
 
 	for i := 0; i < hasherCount; i++ {
@@ -203,6 +210,20 @@ func New(k *network.Kademlia, params *Params) (*Pss, error) {
 /////////////////////////////////////////////////////////////////////
 
 func (p *Pss) Start(srv *p2p.Server) error {
+	// async because it freezes the startup if not, need better solution
+	go func(p *Pss) {
+		rpcClient, err := p.rpcDialer()
+		if err != nil {
+			log.Error(err.Error())
+		}
+		p.kadRpc = rpcClient
+
+		err = p.kadRpc.Call(&p.baseAddr, "hive_baseAddr")
+		if err != nil {
+			log.Error(err.Error())
+		}
+	}(p)
+
 	go func() {
 		ticker := time.NewTicker(defaultCleanInterval)
 		cacheTicker := time.NewTicker(p.cacheTTL)
@@ -265,24 +286,24 @@ func (p *Pss) Run(peer *p2p.Peer, rw p2p.MsgReadWriter) error {
 	return pp.Run(p.handle)
 }
 
-func (p *Pss) getPeer(peer *protocols.Peer) (pp *protocols.Peer, ok bool) {
+func (p *Pss) getPeer(enodeId enode.ID) (pp *protocols.Peer, ok bool) {
 	p.peersMu.RLock()
 	defer p.peersMu.RUnlock()
-	pp, ok = p.peers[peer.Peer.Info().ID]
+	pp, ok = p.peers[enodeId.String()]
 	return
 }
 
 func (p *Pss) addPeer(peer *protocols.Peer) {
 	p.peersMu.Lock()
 	defer p.peersMu.Unlock()
-	p.peers[peer.Peer.Info().ID] = peer
+	p.peers[peer.Peer.ID().String()] = peer
 }
 
 func (p *Pss) removePeer(peer *protocols.Peer) {
 	p.peersMu.Lock()
 	defer p.peersMu.Unlock()
-	log.Trace("removing peer", "id", peer.Peer.Info().ID)
-	delete(p.peers, peer.Peer.Info().ID)
+	log.Trace("removing peer", "id", peer.Peer.ID().String())
+	delete(p.peers, peer.Peer.ID().String())
 }
 
 func (p *Pss) APIs() []rpc.API {
@@ -306,7 +327,7 @@ func (p *Pss) addAPI(api rpc.API) {
 
 // Returns the swarm Kademlia address of the pss node
 func (p *Pss) BaseAddr() []byte {
-	return p.Kademlia.BaseAddr()
+	return p.baseAddr
 }
 
 // Returns the pss node's public key
@@ -402,14 +423,14 @@ func (p *Pss) handle(ctx context.Context, msg interface{}) error {
 	if !ok {
 		return fmt.Errorf("invalid message type. Expected *PssMsg, got %T", msg)
 	}
-	log.Trace("handler", "self", label(p.Kademlia.BaseAddr()), "topic", label(pssmsg.Payload.Topic[:]))
+	log.Trace("handler", "self", label(p.baseAddr), "topic", label(pssmsg.Payload.Topic[:]))
 	if int64(pssmsg.Expire) < time.Now().Unix() {
 		metrics.GetOrRegisterCounter("pss.expire", nil).Inc(1)
-		log.Warn("pss filtered expired message", "from", common.ToHex(p.Kademlia.BaseAddr()), "to", common.ToHex(pssmsg.To))
+		log.Warn("pss filtered expired message", "from", common.ToHex(p.baseAddr), "to", common.ToHex(pssmsg.To))
 		return nil
 	}
 	if p.checkFwdCache(pssmsg) {
-		log.Trace("pss relay block-cache match (process)", "from", common.ToHex(p.Kademlia.BaseAddr()), "to", (common.ToHex(pssmsg.To)))
+		log.Trace("pss relay block-cache match (process)", "from", common.ToHex(p.baseAddr), "to", (common.ToHex(pssmsg.To)))
 		return nil
 	}
 	p.addFwdCache(pssmsg)
@@ -526,12 +547,12 @@ func (p *Pss) executeHandlers(topic Topic, payload []byte, from PssAddress, raw 
 
 // will return false if using partial address
 func (p *Pss) isSelfRecipient(msg *PssMsg) bool {
-	return bytes.Equal(msg.To, p.Kademlia.BaseAddr())
+	return bytes.Equal(msg.To, p.baseAddr)
 }
 
 // test match of leftmost bytes in given message to node's Kademlia address
 func (p *Pss) isSelfPossibleRecipient(msg *PssMsg, prox bool) bool {
-	local := p.Kademlia.BaseAddr()
+	local := p.baseAddr
 
 	// if a partial address matches we are possible recipient regardless of prox
 	// if not and prox is not set, we are surely not
@@ -542,9 +563,13 @@ func (p *Pss) isSelfPossibleRecipient(msg *PssMsg, prox bool) bool {
 		return false
 	}
 
-	depth := p.Kademlia.NeighbourhoodDepth()
-	po, _ := network.Pof(p.Kademlia.BaseAddr(), msg.To, 0)
-	log.Trace("selfpossible", "po", po, "depth", depth)
+	var depth int
+	err := p.kadRpc.Call(&depth, "hive_getDepth")
+	if err != nil {
+		log.Error("kad rpc error", "err", err)
+		return false
+	}
+	po, _ := network.Pof(p.baseAddr, msg.To, 0)
 
 	return depth <= po
 }
@@ -692,22 +717,8 @@ func (p *Pss) send(to []byte, topic Topic, msg []byte, asymmetric bool, key []by
 var sendFunc = sendMsg
 
 // tries to send a message, returns true if successful
-func sendMsg(p *Pss, sp *network.Peer, msg *PssMsg) bool {
-	var isPssEnabled bool
-	info := sp.Info()
-	for _, capability := range info.Caps {
-		if capability == p.capstring {
-			isPssEnabled = true
-			break
-		}
-	}
-	if !isPssEnabled {
-		log.Error("peer doesn't have matching pss capabilities, skipping", "peer", info.Name, "caps", info.Caps)
-		return false
-	}
-
-	// get the protocol peer from the forwarding peer cache
-	pp, ok := p.getPeer(sp.BzzPeer.Peer)
+func sendMsg(p *Pss, enodeId enode.ID, msg *PssMsg) bool {
+	pp, ok := p.getPeer(enodeId)
 	if !ok {
 		log.Warn("peer no longer in our list, dropping message")
 		return false
@@ -737,14 +748,23 @@ func (p *Pss) forward(msg *PssMsg) error {
 	sent := 0 // number of successful sends
 	to := make([]byte, addressLength)
 	copy(to[:len(msg.To)], msg.To)
-	neighbourhoodDepth := p.Kademlia.NeighbourhoodDepth()
+
+	var neighbourhoodDepth int
+	err := p.kadRpc.Call(&neighbourhoodDepth, "hive_getDepth")
+	if err != nil {
+		log.Error("kad rpc error", "err", err)
+		if err := p.enqueue(msg); err != nil {
+			log.Error("enqueue error", "err", err)
+			return err
+		}
+	}
 
 	// luminosity is the opposite of darkness. the more bytes are removed from the address, the higher is darkness,
 	// but the luminosity is less. here luminosity equals the number of bits given in the destination address.
 	luminosityRadius := len(msg.To) * 8
 
 	// proximity order function matching up to neighbourhoodDepth bits (po <= neighbourhoodDepth)
-	pof := pot.DefaultPof(neighbourhoodDepth)
+	pof := pot.DefaultPof(int(neighbourhoodDepth))
 
 	// soft threshold for msg broadcast
 	broadcastThreshold, _ := pof(to, p.BaseAddr(), 0)
@@ -762,22 +782,41 @@ func (p *Pss) forward(msg *PssMsg) error {
 		onlySendOnce = true
 	}
 
-	p.Kademlia.EachConn(to, addressLength*8, func(sp *network.Peer, po int) bool {
-		if po < broadcastThreshold && sent > 0 {
-			return false // stop iterating
+	var lastPo int = 256
+	for lastPo >= 0 {
+		var peers []*network.APIPeer
+		err = p.kadRpc.Call(&peers, "hive_getConnsBin", to, 0, lastPo)
+		if err != nil {
+			log.Error("getconns failed", "err", err)
+			lastPo = -1
+			break
+		} else if len(peers) == 0 {
+			lastPo = -1
+			break
 		}
-		if sendFunc(p, sp, msg) {
-			sent++
-			if onlySendOnce {
-				return false
+		log.Info("sending gegconne", "po", lastPo, "to", to)
+		for _, sp := range peers {
+			lastPo, _ = pof(msg.To, sp.Address(), 0)
+			if lastPo < broadcastThreshold && sent > 0 {
+				lastPo = -1
+				break
 			}
-			if po == addressLength*8 {
+			if sendFunc(p, sp.ID, msg) {
+				sent++
+				if onlySendOnce {
+					lastPo = -1
+					break
+				}
+
 				// stop iterating if successfully sent to the exact recipient (perfect match of full address)
-				return false
+				if lastPo == network.AddressLengthBits {
+					lastPo = -1
+					break
+				}
 			}
+			lastPo -= 1
 		}
-		return true
-	})
+	}
 
 	// if we failed to send to anyone, re-insert message in the send-queue
 	if sent == 0 {

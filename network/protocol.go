@@ -26,7 +26,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethersphere/swarm/log"
 	"github.com/ethersphere/swarm/p2p/protocols"
 	"github.com/ethersphere/swarm/state"
@@ -63,9 +62,9 @@ var DiscoverySpec = &protocols.Spec{
 
 // BzzConfig captures the config params used by the hive
 type BzzConfig struct {
+	HiveParams   *HiveParams
 	OverlayAddr  []byte // base address of the overlay network
 	UnderlayAddr []byte // node's underlay address
-	HiveParams   *HiveParams
 	NetworkID    uint64
 	LightNode    bool
 	BootnodeMode bool
@@ -83,25 +82,28 @@ type Bzz struct {
 	streamerRun  func(*BzzPeer) error
 }
 
+func (b *Bzz) Start(srv *p2p.Server) error {
+	newaddr := b.UpdateLocalAddr([]byte(srv.Self().String()))
+	log.Info("Updated bzz local addr", "oaddr", fmt.Sprintf("%x", newaddr.OAddr), "uaddr", fmt.Sprintf("%s", newaddr.UAddr))
+	b.Hive.Start(srv)
+	return nil
+}
+
 // NewBzz is the swarm protocol constructor
 // arguments
 // * bzz config
 // * overlay driver
 // * peer store
-func NewBzz(config *BzzConfig, kad *Kademlia, store state.Store, streamerSpec *protocols.Spec, streamerRun func(*BzzPeer) error) *Bzz {
-	bzz := &Bzz{
-		Hive:         NewHive(config.HiveParams, kad, store),
-		NetworkID:    config.NetworkID,
-		LightNode:    config.LightNode,
-		localAddr:    &BzzAddr{config.OverlayAddr, config.UnderlayAddr},
-		handshakes:   make(map[enode.ID]*HandshakeMsg),
-		streamerRun:  streamerRun,
-		streamerSpec: streamerSpec,
-	}
+func NewBzz(config *BzzConfig, store state.Store) *Bzz {
 
-	if config.BootnodeMode {
-		bzz.streamerRun = nil
-		bzz.streamerSpec = nil
+	kp := NewKadParams()
+	kad := NewKademlia(config.OverlayAddr, kp)
+	bzz := &Bzz{
+		Hive:       NewHive(config.HiveParams, kad, store),
+		NetworkID:  config.NetworkID,
+		LightNode:  config.LightNode,
+		localAddr:  &BzzAddr{config.OverlayAddr, config.UnderlayAddr},
+		handshakes: make(map[enode.ID]*HandshakeMsg),
 	}
 
 	return bzz
@@ -143,26 +145,7 @@ func (b *Bzz) Protocols() []p2p.Protocol {
 			PeerInfo: b.Hive.PeerInfo,
 		},
 	}
-	if b.streamerSpec != nil && b.streamerRun != nil {
-		protocol = append(protocol, p2p.Protocol{
-			Name:    b.streamerSpec.Name,
-			Version: b.streamerSpec.Version,
-			Length:  b.streamerSpec.Length(),
-			Run:     b.RunProtocol(b.streamerSpec, b.streamerRun),
-		})
-	}
 	return protocol
-}
-
-// APIs returns the APIs offered by bzz
-// * hive
-// Bzz implements the node.Service interface
-func (b *Bzz) APIs() []rpc.API {
-	return []rpc.API{{
-		Namespace: "hive",
-		Version:   "3.0",
-		Service:   b.Hive,
-	}}
 }
 
 // RunProtocol is a wrapper for swarm subprotocols

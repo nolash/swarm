@@ -269,7 +269,21 @@ func TestAddressMatch(t *testing.T) {
 	}
 	privkey, err := w.GetPrivateKey(keys)
 	pssp := NewParams().WithPrivateKey(privkey)
-	ps, err := New(kad, pssp)
+	rpcSrv := rpc.NewServer()
+	rpcDial := func() (*rpc.Client, error) {
+		return rpc.DialInProc(rpcSrv), nil
+	}
+	pssp.RPCDialer = rpcDial
+	ps, err := New(pssp)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	ps.baseAddr = localaddr
+	rpcSrv.RegisterName("pss", ps)
+	hp := network.NewHiveParams()
+	hive := network.NewHive(hp, kad, nil)
+	rpcSrv.RegisterName("hive", hive)
+	ps.kadRpc, err = ps.rpcDialer()
 	if err != nil {
 		t.Fatal(err.Error())
 	}
@@ -323,7 +337,21 @@ func TestAddressMatchProx(t *testing.T) {
 	// set up pss
 	privKey, err := crypto.GenerateKey()
 	pssp := NewParams().WithPrivateKey(privKey)
-	ps, err := New(kad, pssp)
+	rpcSrv := rpc.NewServer()
+	rpcDial := func() (*rpc.Client, error) {
+		return rpc.DialInProc(rpcSrv), nil
+	}
+	pssp.RPCDialer = rpcDial
+	ps, err := New(pssp)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	ps.baseAddr = localAddr
+	rpcSrv.RegisterName("pss", ps)
+	hp := network.NewHiveParams()
+	hive := network.NewHive(hp, kad, nil)
+	rpcSrv.RegisterName("hive", hive)
+	ps.kadRpc, err = ps.rpcDialer()
 	if err != nil {
 		t.Fatal(err.Error())
 	}
@@ -745,66 +773,6 @@ OUTER:
 	}
 }
 
-// forwarding should skip peers that do not have matching pss capabilities
-func TestPeerCapabilityMismatch(t *testing.T) {
-
-	// create privkey for forwarder node
-	privkey, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// initialize kad
-	baseaddr := network.RandomAddr()
-	kad := network.NewKademlia((baseaddr).Over(), network.NewKadParams())
-	rw := &p2p.MsgPipeRW{}
-
-	// one peer has a mismatching version of pss
-	wrongpssaddr := network.RandomAddr()
-	wrongpsscap := p2p.Cap{
-		Name:    protocolName,
-		Version: 0,
-	}
-	nid := enode.ID{0x01}
-	wrongpsspeer := network.NewPeer(&network.BzzPeer{
-		Peer:    protocols.NewPeer(p2p.NewPeer(nid, common.ToHex(wrongpssaddr.Over()), []p2p.Cap{wrongpsscap}), rw, nil),
-		BzzAddr: &network.BzzAddr{OAddr: wrongpssaddr.Over(), UAddr: nil},
-	}, kad)
-
-	// one peer doesn't even have pss (boo!)
-	nopssaddr := network.RandomAddr()
-	nopsscap := p2p.Cap{
-		Name:    "nopss",
-		Version: 1,
-	}
-	nid = enode.ID{0x02}
-	nopsspeer := network.NewPeer(&network.BzzPeer{
-		Peer:    protocols.NewPeer(p2p.NewPeer(nid, common.ToHex(nopssaddr.Over()), []p2p.Cap{nopsscap}), rw, nil),
-		BzzAddr: &network.BzzAddr{OAddr: nopssaddr.Over(), UAddr: nil},
-	}, kad)
-
-	// add peers to kademlia and activate them
-	// it's safe so don't check errors
-	kad.Register(wrongpsspeer.BzzAddr)
-	kad.On(wrongpsspeer)
-	kad.Register(nopsspeer.BzzAddr)
-	kad.On(nopsspeer)
-
-	// create pss
-	pssmsg := &PssMsg{
-		To:      []byte{},
-		Expire:  uint32(time.Now().Add(time.Second).Unix()),
-		Payload: &whisper.Envelope{},
-	}
-	ps := newTestPss(privkey, kad, nil)
-	defer ps.Stop()
-
-	// run the forward
-	// it is enough that it completes; trying to send to incapable peers would create segfault
-	ps.forward(pssmsg)
-
-}
-
 // verifies that message handlers for raw messages only are invoked when minimum one handler for the topic exists in which raw messages are explicitly allowed
 func TestRawAllow(t *testing.T) {
 
@@ -814,8 +782,9 @@ func TestRawAllow(t *testing.T) {
 		t.Fatal(err)
 	}
 	baseAddr := network.RandomAddr()
-	kad := network.NewKademlia((baseAddr).Over(), network.NewKadParams())
+	kad := network.NewKademlia(baseAddr.Over(), network.NewKadParams())
 	ps := newTestPss(privKey, kad, nil)
+	ps.baseAddr = baseAddr.Address()
 	defer ps.Stop()
 	topic := BytesToTopic([]byte{0x2a})
 
@@ -838,6 +807,7 @@ func TestRawAllow(t *testing.T) {
 		raw: true,
 	})
 	pssMsg.To = baseAddr.OAddr
+	log.Warn("oaddr", "addR", baseAddr.Address())
 	pssMsg.Expire = uint32(time.Now().Unix() + 4200)
 	pssMsg.Payload = &whisper.Envelope{
 		Topic: whisper.TopicType(topic),
@@ -1824,21 +1794,6 @@ func setupNetwork(numnodes int, allowRaw bool) (clients []*rpc.Client, err error
 
 func newServices(allowRaw bool) adapters.Services {
 	stateStore := state.NewInmemoryStore()
-	kademlias := make(map[enode.ID]*network.Kademlia)
-	kademlia := func(id enode.ID) *network.Kademlia {
-		if k, ok := kademlias[id]; ok {
-			return k
-		}
-		params := network.NewKadParams()
-		params.NeighbourhoodSize = 2
-		params.MaxBinSize = 3
-		params.MinBinSize = 1
-		params.MaxRetries = 1000
-		params.RetryExponent = 2
-		params.RetryInterval = 1000000
-		kademlias[id] = network.NewKademlia(id[:], params)
-		return kademlias[id]
-	}
 	return adapters.Services{
 		protocolName: func(ctx *adapters.ServiceContext) (node.Service, error) {
 			// execadapter does not exec init()
@@ -1850,8 +1805,10 @@ func newServices(allowRaw bool) adapters.Services {
 			privkey, err := w.GetPrivateKey(keys)
 			pssp := NewParams().WithPrivateKey(privkey)
 			pssp.AllowRaw = allowRaw
-			pskad := kademlia(ctx.Config.ID)
-			ps, err := New(pskad, pssp)
+			pssp.RPCDialer = func() (*rpc.Client, error) {
+				return ctx.DialRPC(ctx.Config.ID)
+			}
+			ps, err := New(pssp)
 			if err != nil {
 				return nil, err
 			}
@@ -1896,7 +1853,7 @@ func newServices(allowRaw bool) adapters.Services {
 				UnderlayAddr: addr.Under(),
 				HiveParams:   hp,
 			}
-			return network.NewBzz(config, kademlia(ctx.Config.ID), stateStore, nil, nil), nil
+			return network.NewBzz(config, stateStore), nil
 		},
 	}
 }
@@ -1911,14 +1868,20 @@ func newTestPss(privkey *ecdsa.PrivateKey, kad *network.Kademlia, ppextra *Param
 	}
 
 	// create pss
+	rpcSrv := rpc.NewServer()
+	rpcDial := func() (*rpc.Client, error) {
+		return rpc.DialInProc(rpcSrv), nil
+	}
 	pp := NewParams().WithPrivateKey(privkey)
+	pp.RPCDialer = rpcDial
 	if ppextra != nil {
 		pp.SymKeyCacheCapacity = ppextra.SymKeyCacheCapacity
 	}
-	ps, err := New(kad, pp)
+	ps, err := New(pp)
 	if err != nil {
 		return nil
 	}
+	rpcSrv.RegisterName("pss", NewAPI(ps))
 	ps.Start(nil)
 
 	return ps
