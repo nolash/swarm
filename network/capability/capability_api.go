@@ -1,4 +1,4 @@
-package network
+package capability
 
 import (
 	"fmt"
@@ -22,19 +22,19 @@ func NewCapabilitiesAPI(c *Capabilities) *CapabilitiesAPI {
 // RegisterCapability adds the given capability object to the Capabilities collection
 // If the Capability is already registered an error will be returned
 func (a *CapabilitiesAPI) RegisterCapability(cp *Capability) error {
-	log.Debug("Registering capability", "cp", cp)
-	return a.add(cp)
+	log.Trace("Registering capability", "cp", cp)
+	return a.Add(cp)
 }
 
 // IsRegisteredCapability returns true if a Capability with the given id is registered
 func (a *CapabilitiesAPI) IsRegisteredCapability(id CapabilityId) (bool, error) {
-	return a.get(id) != nil, nil
+	return a.Get(id) != nil, nil
 }
 
 // MatchCapability returns true if the Capability flag at the given index is set
 // Fails with error if the Capability is not registered, or if the index is out of bounds
 func (a *CapabilitiesAPI) MatchCapability(id CapabilityId, idx int) (bool, error) {
-	c := a.get(id)
+	c := a.Get(id)
 	if c == nil {
 		return false, fmt.Errorf("Capability %d not registered", id)
 	} else if idx > len(c.Cap)-1 {
