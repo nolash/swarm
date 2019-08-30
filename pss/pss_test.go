@@ -42,6 +42,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/simulations/adapters"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethersphere/swarm/network"
+	"github.com/ethersphere/swarm/network/capability"
 	"github.com/ethersphere/swarm/network/simulation"
 	"github.com/ethersphere/swarm/p2p/protocols"
 	"github.com/ethersphere/swarm/pot"
@@ -336,6 +337,7 @@ func TestAddressMatchProx(t *testing.T) {
 			},
 		}
 		peer := network.NewPeer(bzzPeer, kad)
+		peer.Capabilities = capability.NewCapabilities()
 		kad.On(peer)
 		peers = append(peers, peer)
 	}
@@ -758,7 +760,7 @@ func TestPeerCapabilityMismatch(t *testing.T) {
 	nid := enode.ID{0x01}
 	wrongpsspeer := network.NewPeer(&network.BzzPeer{
 		Peer:    protocols.NewPeer(p2p.NewPeer(nid, common.ToHex(wrongpssaddr.Over()), []p2p.Cap{wrongpsscap}), rw, nil),
-		BzzAddr: &network.BzzAddr{OAddr: wrongpssaddr.Over(), UAddr: nil},
+		BzzAddr: &network.BzzAddr{OAddr: wrongpssaddr.Over(), UAddr: nil, Capabilities: capability.NewCapabilities()},
 	}, kad)
 
 	// one peer doesn't even have pss (boo!)
@@ -770,7 +772,7 @@ func TestPeerCapabilityMismatch(t *testing.T) {
 	nid = enode.ID{0x02}
 	nopsspeer := network.NewPeer(&network.BzzPeer{
 		Peer:    protocols.NewPeer(p2p.NewPeer(nid, common.ToHex(nopssaddr.Over()), []p2p.Cap{nopsscap}), rw, nil),
-		BzzAddr: &network.BzzAddr{OAddr: nopssaddr.Over(), UAddr: nil},
+		BzzAddr: &network.BzzAddr{OAddr: nopssaddr.Over(), UAddr: nil, Capabilities: capability.NewCapabilities()},
 	}, kad)
 
 	// add peers to kademlia and activate them
