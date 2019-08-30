@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	whisper "github.com/ethereum/go-ethereum/whisper/whisperv6"
 	"github.com/ethersphere/swarm/network"
+	"github.com/ethersphere/swarm/network/capability"
 	"github.com/ethersphere/swarm/p2p/protocols"
 	"github.com/ethersphere/swarm/pot"
 )
@@ -316,6 +317,7 @@ func testForwardMsg(t *testing.T, ps *Pss, c *testCase) {
 func addPeers(kad *network.Kademlia, addresses []pot.Address) {
 	for _, a := range addresses {
 		p := newTestDiscoveryPeer(a, kad)
+		p.BzzAddr.Capabilities = capability.NewCapabilities()
 		kad.On(p)
 	}
 }

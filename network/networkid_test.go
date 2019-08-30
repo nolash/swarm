@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/simulations"
 	"github.com/ethereum/go-ethereum/p2p/simulations/adapters"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethersphere/swarm/network/capability"
 )
 
 var (
@@ -198,7 +199,7 @@ func newServices() adapters.Services {
 	}
 	return adapters.Services{
 		"bzz": func(ctx *adapters.ServiceContext) (node.Service, error) {
-			addr := NewAddr(ctx.Config.Node())
+			addr := NewAddr(ctx.Config.Node()).WithCapabilities(capability.NewCapabilities())
 			hp := NewHiveParams()
 			hp.Discovery = false
 			cnt++

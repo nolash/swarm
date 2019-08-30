@@ -125,7 +125,6 @@ type Bzz struct {
 	handshakes   map[enode.ID]*HandshakeMsg
 	streamerSpec *protocols.Spec
 	streamerRun  func(*BzzPeer) error
-	capabilities *capability.Capabilities // capabilities control and state
 }
 
 // NewBzz is the swarm protocol constructor
@@ -137,11 +136,10 @@ func NewBzz(config *BzzConfig, kad *Kademlia, store state.Store, streamerSpec *p
 	bzz := &Bzz{
 		Hive:         NewHive(config.HiveParams, kad, store),
 		NetworkID:    config.NetworkID,
-		localAddr:    &BzzAddr{config.OverlayAddr, config.UnderlayAddr},
+		localAddr:    &BzzAddr{config.OverlayAddr, config.UnderlayAddr, capability.NewCapabilities()},
 		handshakes:   make(map[enode.ID]*HandshakeMsg),
 		streamerRun:  streamerRun,
 		streamerSpec: streamerSpec,
-		capabilities: capability.NewCapabilities(),
 	}
 
 	if config.BootnodeMode {
@@ -151,9 +149,9 @@ func NewBzz(config *BzzConfig, kad *Kademlia, store state.Store, streamerSpec *p
 
 	// temporary soon-to-be-legacy light/full, as above
 	if config.LightNode {
-		bzz.capabilities.Add(newLightCapability())
+		bzz.localAddr.Capabilities.Add(newLightCapability())
 	} else {
-		bzz.capabilities.Add(newFullCapability())
+		bzz.localAddr.Capabilities.Add(newFullCapability())
 	}
 
 	return bzz
@@ -274,7 +272,7 @@ func (b *Bzz) performHandshake(p *protocols.Peer, handshake *HandshakeMsg) error
 		return err
 	}
 	handshake.peerAddr = rsh.(*HandshakeMsg).Addr
-	handshake.Capabilities = rsh.(*HandshakeMsg).Capabilities
+	handshake.peerAddr.Capabilities = rsh.(*HandshakeMsg).Capabilities
 	return nil
 }
 
@@ -385,9 +383,10 @@ func (b *Bzz) GetOrCreateHandshake(peerID enode.ID) (*HandshakeMsg, bool) {
 			Version:      uint64(BzzSpec.Version),
 			NetworkID:    b.NetworkID,
 			Addr:         b.localAddr,
-			Capabilities: b.capabilities,
-			init:         make(chan bool, 1),
-			done:         make(chan struct{}),
+			Capabilities: b.localAddr.Capabilities,
+			//Capabilities: b.capabilities,
+			init: make(chan bool, 1),
+			done: make(chan struct{}),
 		}
 		// when handhsake is first created for a remote peer
 		// it is initialised with the init
