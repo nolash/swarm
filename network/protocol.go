@@ -312,7 +312,7 @@ type BzzPeer struct {
 }
 
 func NewBzzPeer(p *protocols.Peer) *BzzPeer {
-	return &BzzPeer{Peer: p, BzzAddr: NewAddr(p.Node())}
+	return &BzzPeer{Peer: p, BzzAddr: NewBzzAddrFromEnode(p.Node())}
 }
 
 // ID returns the peer's underlay node identifier.
