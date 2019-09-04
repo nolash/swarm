@@ -925,7 +925,7 @@ func TestGetServerSubscriptions(t *testing.T) {
 
 	// now create a number of dummy servers for each node
 	for i := 0; i < testPeerCount; i++ {
-		addr := network.RandomAddr()
+		addr := network.RandomBzzAddr()
 		id := addr.ID()
 		p := &Peer{}
 		p.servers = make(map[Stream]*server)

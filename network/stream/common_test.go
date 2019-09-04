@@ -143,7 +143,7 @@ func netStoreAndDeliveryWithAddr(ctx *adapters.ServiceContext, bucket *sync.Map,
 
 func newStreamerTester(registryOptions *RegistryOptions) (*p2ptest.ProtocolTester, *Registry, *localstore.DB, func(), error) {
 	// setup
-	addr := network.RandomAddr() // tested peers peer address
+	addr := network.RandomBzzAddr() // tested peers peer address
 	to := network.NewKademlia(addr.OAddr, network.NewKadParams())
 
 	// temp datadir
