@@ -50,7 +50,7 @@ func NodeConfigAtPo(t *testing.T, baseaddr []byte, po int) *adapters.NodeConfig 
 			t.Fatalf("unable to create enode: %v", err)
 		}
 
-		n := network.NewAddr(nod)
+		n := network.NewBzzAddrFromEnode(nod)
 		foundPo = chunk.Proximity(baseaddr, n.Over())
 	}
 
