@@ -56,7 +56,7 @@ func TestTwoNodesFullSync(t *testing.T) { //
 	)
 	sim := simulation.NewInProc(map[string]simulation.ServiceFunc{
 		"streamer": func(ctx *adapters.ServiceContext, bucket *sync.Map) (s node.Service, cleanup func(), err error) {
-			addr := network.NewAddr(ctx.Config.Node())
+			addr := network.NewBzzAddrFromEnode(ctx.Config.Node())
 
 			netStore, delivery, clean, err := newNetStoreAndDeliveryWithBzzAddr(ctx, bucket, addr)
 			if err != nil {
@@ -255,7 +255,7 @@ func TestStarNetworkSync(t *testing.T) {
 	)
 	sim := simulation.NewInProc(map[string]simulation.ServiceFunc{
 		"streamer": func(ctx *adapters.ServiceContext, bucket *sync.Map) (s node.Service, cleanup func(), err error) {
-			addr := network.NewAddr(ctx.Config.Node())
+			addr := network.NewBzzAddrFromEnode(ctx.Config.Node())
 
 			netStore, delivery, clean, err := newNetStoreAndDeliveryWithBzzAddr(ctx, bucket, addr)
 			if err != nil {

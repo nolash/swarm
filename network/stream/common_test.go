@@ -73,7 +73,7 @@ func init() {
 
 // newNetStoreAndDelivery is a default constructor for BzzAddr, NetStore and Delivery, used in Simulations
 func newNetStoreAndDelivery(ctx *adapters.ServiceContext, bucket *sync.Map) (*network.BzzAddr, *storage.NetStore, *Delivery, func(), error) {
-	addr := network.NewAddr(ctx.Config.Node())
+	addr := network.NewBzzAddrFromEnode(ctx.Config.Node())
 
 	netStore, delivery, cleanup, err := netStoreAndDeliveryWithAddr(ctx, bucket, addr)
 	if err != nil {
@@ -99,7 +99,7 @@ func newNetStoreAndDeliveryWithBzzAddr(ctx *adapters.ServiceContext, bucket *syn
 
 // newNetStoreAndDeliveryWithRequestFunc is a constructor for NetStore and Delivery, used in Simulations, accepting any NetStore.RequestFunc
 func newNetStoreAndDeliveryWithRequestFunc(ctx *adapters.ServiceContext, bucket *sync.Map, rf storage.RemoteGetFunc) (*network.BzzAddr, *storage.NetStore, *Delivery, func(), error) {
-	addr := network.NewAddr(ctx.Config.Node())
+	addr := network.NewBzzAddrFromEnode(ctx.Config.Node())
 
 	netStore, delivery, cleanup, err := netStoreAndDeliveryWithAddr(ctx, bucket, addr)
 	if err != nil {
