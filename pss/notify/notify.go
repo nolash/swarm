@@ -1,3 +1,5 @@
+// +build psslegacy
+
 package notify
 
 import (
