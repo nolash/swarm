@@ -19,6 +19,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"sync"
@@ -298,4 +299,22 @@ func chunkAddresses(chunks []Chunk) []Address {
 		addrs[i] = ch.Address()
 	}
 	return addrs
+}
+
+func generateRandomData(l int) (r io.Reader, slice []byte) {
+	slice = make([]byte, l)
+	if _, err := rand.Read(slice); err != nil {
+		panic("rand error")
+	}
+	r = io.LimitReader(bytes.NewReader(slice), int64(l))
+	return
+}
+
+func generateSerialData(l int, mod int, offset int) (r io.Reader, slice []byte) {
+	slice = make([]byte, l)
+	for i := 0; i < len(slice); i++ {
+		slice[i] = byte((i + offset) % mod)
+	}
+	r = io.LimitReader(bytes.NewReader(slice), int64(l))
+	return
 }
