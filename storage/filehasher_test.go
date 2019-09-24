@@ -177,38 +177,6 @@ func benchmarkChainedFileHasher(b *testing.B) {
 	}
 }
 
-func TestAltFileHasher(t *testing.T) {
-	t.Skip()
-	var mismatch int
-
-	for i := start; i < end; i++ {
-		dataLength := dataLengths[i]
-		log.Info("start", "i", i, "len", dataLength)
-		fh := NewAltFileHasher(newAsyncHasher, 32, 128)
-		_, data := generateSerialData(dataLength, 255, 0)
-		l := 32
-		offset := 0
-		for i := 0; i < dataLength; i += 32 {
-			remain := dataLength - offset
-			if remain < l {
-				l = remain
-			}
-			fh.Write(data[offset : offset+l])
-			offset += 32
-		}
-		refHash := fh.Finish(nil)
-		eq := true
-		if expected[i] != fmt.Sprintf("%x", refHash) {
-			mismatch++
-			eq = false
-		}
-		t.Logf("[%7d+%4d]\t%v\tref: %x\texpect: %s", dataLength/chunkSize, dataLength%chunkSize, eq, refHash, expected[i])
-	}
-	if mismatch > 0 {
-		t.Fatalf("mismatches: %d/%d", mismatch, end-start)
-	}
-}
-
 func TestReferenceFileHasher(t *testing.T) {
 	h := bmt.New(pool)
 	var mismatch int
@@ -260,79 +228,6 @@ func TestPyramidHasherCompare(t *testing.T) {
 	}
 }
 
-func TestSum(t *testing.T) {
-
-	var mismatch int
-	serialOffset := 0
-
-	for i := start; i < end; i++ {
-		dl := dataLengths[i]
-		chunks := dl / chunkSize
-		log.Debug("testing", "c", chunks, "s", dl%chunkSize)
-		fhStartTime := time.Now()
-		fh := NewFileHasher(newAsyncHasher, 128, 32)
-		_, data := generateSerialData(dl, 255, serialOffset)
-		for i := 0; i < len(data); i += 32 {
-			max := i + 32
-			if len(data) < max {
-				max = len(data)
-			}
-			_, err := fh.WriteBuffer(i, data[i:max])
-			if err != nil {
-				t.Fatal(err)
-			}
-		}
-
-		fh.SetLength(int64(dl))
-		h := fh.Sum(nil)
-		rhStartTime := time.Now()
-		rh := NewReferenceFileHasher(bmt.New(pool), 128)
-		p := rh.Hash(bytes.NewReader(data), len(data)).Bytes()
-		rhDur := time.Now().Sub(rhStartTime)
-
-		eq := bytes.Equal(p, h)
-		if !eq {
-			mismatch++
-		}
-		t.Logf("[%3d + %2d]\t%v\t%x\t%x", chunks, dl%chunkSize, eq, p, h)
-		t.Logf("ptime %v\tftime %v", rhDur, rhStartTime.Sub(fhStartTime))
-	}
-	if mismatch > 0 {
-		t.Fatalf("%d/%d mismatches", mismatch, len(dataLengths))
-	}
-}
-
-func BenchmarkAltFileHasher(b *testing.B) {
-	b.Skip()
-	for i := start; i < end; i++ {
-		b.Run(fmt.Sprintf("%d", dataLengths[i]), benchmarkAltFileHasher)
-	}
-}
-
-func benchmarkAltFileHasher(b *testing.B) {
-	params := strings.Split(b.Name(), "/")
-	dataLength, err := strconv.ParseInt(params[1], 10, 64)
-	if err != nil {
-		b.Fatal(err)
-	}
-	_, data := generateSerialData(int(dataLength), 255, 0)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		fh := NewAltFileHasher(newAsyncHasher, 32, 128)
-		l := int64(32)
-		offset := int64(0)
-		for j := int64(0); j < dataLength; j += 32 {
-			remain := dataLength - offset
-			if remain < l {
-				l = remain
-			}
-			fh.Write(data[offset : offset+l])
-			offset += 32
-		}
-		fh.Finish(nil)
-	}
-}
-
 func BenchmarkPyramidHasherCompareAltFileHasher(b *testing.B) {
 
 	for i := start; i < end; i++ {
@@ -363,38 +258,6 @@ func benchmarkPyramidHasherCompareAltFileHasher(b *testing.B) {
 		if err != nil {
 			b.Fatalf(err.Error())
 		}
-	}
-}
-
-func BenchmarkFileHasher(b *testing.B) {
-	for i := start; i < end; i++ {
-		b.Run(fmt.Sprintf("%d", dataLengths[i]), benchmarkFileHasher)
-	}
-}
-
-func benchmarkFileHasher(b *testing.B) {
-	params := strings.Split(b.Name(), "/")
-	dataLength, err := strconv.ParseInt(params[1], 10, 64)
-	if err != nil {
-		b.Fatal(err)
-	}
-	_, data := generateSerialData(int(dataLength), 255, 0)
-
-	for i := 0; i < b.N; i++ {
-		fh := NewFileHasher(newAsyncHasher, 128, 32)
-		for i := 0; i < len(data); i += 32 {
-			max := i + 32
-			if len(data) < max {
-				max = len(data)
-			}
-			_, err := fh.WriteBuffer(i, data[i:max])
-			if err != nil {
-				b.Fatal(err)
-			}
-		}
-
-		fh.SetLength(int64(dataLength))
-		fh.Sum(nil)
 	}
 }
 
