@@ -190,6 +190,7 @@ func (h *Handler) Lookup(ctx context.Context, query *Query) (*cacheEntry, error)
 		ctx, cancel := context.WithTimeout(ctx, defaultRetrieveTimeout)
 		defer cancel()
 
+		log.Trace("attempting feed retrieve", "time", epoch.Time, "level", epoch.Level)
 		r := storage.NewRequest(id.Addr())
 		ch, err := h.chunkStore.Get(ctx, chunk.ModeGetLookup, r)
 		if err != nil {

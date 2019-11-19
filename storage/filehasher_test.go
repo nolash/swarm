@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/crypto/sha3"
 
@@ -70,12 +69,23 @@ var (
 		"522194562123473dcfd7a457b18ee7dee8b7db70ed3cfa2b73f348a992fdfd3b", // 19
 	}
 
-	start = 13
-	end   = 14
+	start = 7
+	end   = 15 //len(dataLengths)
 )
 
 type wrappedHasher struct {
 	bmt.SectionWriter
+}
+
+func newAsyncHasher() bmt.SectionWriter {
+	h := newSyncHasher()
+	return h.NewAsyncWriter(false)
+}
+
+func newSyncHasher() *bmt.Hasher {
+	pool = bmt.NewTreePool(sha3.NewLegacyKeccak256, 128, bmt.PoolSize)
+	h := bmt.New(pool)
+	return h
 }
 
 func (w *wrappedHasher) BatchSize() uint64 {
@@ -86,54 +96,37 @@ func (w *wrappedHasher) PadSize() uint64 {
 	return 0
 }
 
-func newAsyncHasher() bmt.SectionWriter {
-	pool = bmt.NewTreePool(sha3.NewLegacyKeccak256, 128, bmt.PoolSize)
-	h := bmt.New(pool)
-	return h.NewAsyncWriter(false)
-}
-
 func TestChainedFileHasher(t *testing.T) {
-	chunker := &FileChunker{}
 	hashFunc := func() SectionHasherTwo {
-		return SectionHasherTwo(NewFilePadder(chunker))
-	}
-	hashFunc = func() SectionHasherTwo {
 		return &wrappedHasher{
 			SectionWriter: newAsyncHasher(),
 		}
 	}
-	//	hashFunc = func() SectionHasherTwo {
-	//		return newTreeHasherWrapper()
-	//	}
-
-	fh, err := NewFileSplitter(hashFunc, writerModeGC)
-	if err != nil {
-		t.Fatal(err)
-	}
-	log.Info("filehasher set up", "batchsize", fh.BatchSize(), "padsize", fh.PadSize())
 
 	for i := start; i < end; i++ {
+		dataHasher := newSyncHasher()
+		fh, err := NewFileSplitter(dataHasher, hashFunc, writerModePool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		log.Info("filehasher set up", "batchsize", fh.BatchSize(), "padsize", fh.PadSize())
+
 		dataLength := dataLengths[i]
 		_, data := generateSerialData(dataLength, 255, 0)
 		log.Info(">>>>>>>>> NewFileHasher start", "i", i, "len", dataLength)
 		offset := 0
-		l := fh.SectionSize()
-		for i := 0; i < dataLength; i += 32 {
+		l := 4096
+		for j := 0; j < dataLength; j += 4096 {
 			remain := dataLength - offset
 			if remain < l {
 				l = remain
 			}
-			fh.Write(i/32, data[offset:offset+l])
-			offset += 32
+			fh.Write(int(offset/32), data[offset:offset+l])
+			offset += 4096
 		}
-		time.Sleep(time.Second * 2)
-		refHash := fh.Sum(nil, 0, nil)
-		_ = refHash // nothing yet
-		t.Logf("debug create: %d - change %d", fh.debugJobCreate, fh.debugJobChange)
-		t.Logf("debug bytes top: %x", fh.topJob.debugHash)
-		for j, w := range fh.debugWrites {
-			t.Logf("%s: %v", j, w)
-		}
+		//span := lengthToSpan(uint64(dataLength) % 4096)
+		refHash := fh.Sum(nil, 0, nil) //span)
+		log.Warn("Final", "sum", fmt.Sprintf("%x", refHash))
 	}
 }
 
@@ -151,33 +144,44 @@ func benchmarkChainedFileHasher(b *testing.B) {
 	}
 	_, data := generateSerialData(int(dataLength), 255, 0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		hashFunc := func() SectionHasherTwo {
-			return newTreeHasherWrapper()
-			// return &wrappedHasher{
-			// 	SectionWriter: newAsyncHasher(),
-			// }
+	//for i := 0; i < b.N; i++ {
+	hashFunc := func() SectionHasherTwo {
+		//return newTreeHasherWrapper()
+		return &wrappedHasher{
+			SectionWriter: newAsyncHasher(),
 		}
-		fh, err := NewFileSplitter(hashFunc, writerModePool)
-		if err != nil {
-			b.Fatal(err)
-		}
-		_ = SectionHasherTwo(fh)
-		l := int64(32)
-		offset := int64(0)
-		for j := int64(0); j < dataLength; j += 32 {
-			remain := dataLength - offset
-			if remain < l {
-				l = remain
-			}
-			fh.Write(int(offset/32), data[offset:offset+l])
-			offset += 32
-		}
-		//refHash := fh.Sum(nil, 0, nil)
 	}
+	dataHasher := newSyncHasher()
+	fh, err := NewFileSplitter(dataHasher, hashFunc, writerModePool)
+	if err != nil {
+		b.Fatal(err)
+	}
+	//_ = SectionHasherTwo(fh)
+	l := int64(4096)
+	offset := int64(0)
+	//		for j := int64(0); j < dataLength; j += 32 {
+	//			remain := dataLength - offset
+	//			if remain < l {
+	//				l = remain
+	//			}
+	//			fh.Write(int(offset/32), data[offset:offset+l])
+	//			offset += 32
+	//		}
+	for j := int64(0); j < dataLength; j += 4096 {
+		remain := dataLength - offset
+		if remain < l {
+			l = remain
+		}
+		fh.Write(int(offset/32), data[offset:offset+l])
+		offset += 4096
+	}
+	//refHash := fh.Sum(nil, 0, nil)
+	//log.Info("res", "l", dataLength, "h", refHash)
+	//}
 }
 
 func TestReferenceFileHasher(t *testing.T) {
+	pool = bmt.NewTreePool(sha3.NewLegacyKeccak256, 128, bmt.PoolSize)
 	h := bmt.New(pool)
 	var mismatch int
 	for i := start; i < end; i++ {
@@ -200,6 +204,8 @@ func TestReferenceFileHasher(t *testing.T) {
 
 func TestPyramidHasherCompare(t *testing.T) {
 
+	start = 6
+	end = 7
 	var mismatch int
 	for i := start; i < end; i++ {
 		dataLength := dataLengths[i]
@@ -210,7 +216,7 @@ func TestPyramidHasherCompare(t *testing.T) {
 		putGetter := newTestHasherStore(&FakeChunkStore{}, BMTHash)
 
 		ctx := context.Background()
-		refHash, wait, err := PyramidSplit(ctx, buf, putGetter, putGetter, nil)
+		refHash, wait, err := PyramidSplit(ctx, buf, putGetter, putGetter, chunk.NewTag(0, "foo", int64(dataLength/4096+1)))
 		if err != nil {
 			t.Fatalf(err.Error())
 		}
