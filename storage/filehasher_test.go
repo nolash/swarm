@@ -69,8 +69,8 @@ var (
 		"522194562123473dcfd7a457b18ee7dee8b7db70ed3cfa2b73f348a992fdfd3b", // 19
 	}
 
-	start = 0
-	end   = len(dataLengths)
+	start = 7
+	end   = 8 //len(dataLengths)
 )
 
 type wrappedHasher struct {
@@ -105,7 +105,11 @@ func TestChainedFileHasher(t *testing.T) {
 
 	for i := start; i < end; i++ {
 		dataHasher := newSyncHasher()
-		fh, err := NewFileSplitter(dataHasher, hashFunc, writerModePool)
+		//		fh, err := NewFileSplitter(dataHasher, hashFunc, writerModePool)
+		//		if err != nil {
+		//			t.Fatal(err)
+		//		}
+		fh, err := NewFileSplitterTwo(dataHasher, hashFunc)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -142,19 +146,20 @@ func benchmarkChainedFileHasher(b *testing.B) {
 		b.Fatal(err)
 	}
 	_, data := generateSerialData(int(dataLength), 255, 0)
+	hashFunc := func() SectionHasherTwo {
+		//return newTreeHasherWrapper()
+		return &wrappedHasher{
+			SectionWriter: newAsyncHasher(),
+		}
+	}
+	dataHasher := newSyncHasher()
+	fh, err := NewFileSplitterTwo(dataHasher, hashFunc)
+	if err != nil {
+		b.Fatal(err)
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		hashFunc := func() SectionHasherTwo {
-			//return newTreeHasherWrapper()
-			return &wrappedHasher{
-				SectionWriter: newAsyncHasher(),
-			}
-		}
-		dataHasher := newSyncHasher()
-		fh, err := NewFileSplitter(dataHasher, hashFunc, writerModePool)
-		if err != nil {
-			b.Fatal(err)
-		}
+
 		//_ = SectionHasherTwo(fh)
 		l := int64(4096)
 		offset := int64(0)

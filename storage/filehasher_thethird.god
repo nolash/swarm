@@ -264,7 +264,7 @@ type hasherJob struct {
 	dataOffset    uint64 // global write count this job represents
 	levelOffset   uint64 // offset on this level
 	count         uint64 // amount of writes on this job
-	edge          int    // > 0 on last write, incremented by 1 every level traversed on right edge, used to determine skipping levels on dangling chunk
+	edge          int32  // > 0 on last write, incremented by 1 every level traversed on right edge, used to determine skipping levels on dangling chunk
 	level         int
 	debugHash     []byte
 	debugLifetime uint32
@@ -291,7 +291,7 @@ type FileSplitter struct {
 	lastWrite   uint64  // total number of bytes currently written
 	lastCount   uint64  // total number of sections currently written
 	targetCount uint64  // set when sum is called, is total number of bytes finally written
-	targetLevel int     // set when sum is called, is tree level of root chunk
+	targetLevel int32   // set when sum is called, is tree level of root chunk
 
 	resultC chan []byte
 
@@ -401,11 +401,12 @@ func (m *FileSplitter) Sum(b []byte, length int, span []byte) []byte {
 		m.targetLevel += 1
 	}
 	log.Debug("set targetlevel", "l", m.targetLevel)
-	m.lastJob.edge = 1
+	atomic.StoreInt32(&m.lastJob.edge, 1)
 	if m.lastWrite <= uint64(m.sectionSize*m.branches) {
 		return m.topHash
 	}
-	m.sum(b, int(m.lastJob.count-1), m.lastJob.count-1, m.lastJob, m.lastJob.writer, m.lastJob.parent)
+	count := atomic.LoadUint64(&m.lastJob.count)
+	m.sum(b, int(count-1), count-1, m.lastJob, m.lastJob.writer, m.lastJob.parent)
 	return <-m.resultC
 }
 
@@ -428,24 +429,26 @@ func (m *FileSplitter) write(h *altJob, index int, b []byte) {
 
 	// if we are crossing a batch write size, we spawn a new job
 	// and point the data writer's job pointer lastJob to it
-	oldcount, newcount := h.inc()
 
 	// write the data to the chain
+	oldcount, newcount := h.inc()
 	m.writerMu.Lock()
 	w := h.writer
+	p := h.parent
 	m.writerMu.Unlock()
 	w.Write(index, b)
-	log.Debug("job write", "level", h.level, "index", index, "bytes", hexutil.Encode(b), "job", fmt.Sprintf("%p", h), "w", fmt.Sprintf("%p", w), "edge", h.edge)
+	edge := atomic.LoadInt32(&m.lastJob.edge)
+	//log.Debug("job write", "level", h.level, "index", index, "bytes", hexutil.Encode(b), "job", fmt.Sprintf("%p", h), "w", fmt.Sprintf("%p", w), "edge", h.edge)
 
 	// sum data if:
 	// * the write is on a threshold, or
 	// * if we're done writing
-	if newcount == m.writerBatchSize || h.edge > 0 {
+	if newcount == m.writerBatchSize || edge > 0 {
 		// we use oldcount here to do one less operation when calculating thisJobLength
-		go m.sum(b, index, oldcount, h, w, h.parent)
+		go m.sum(b, index, oldcount, h, w, p)
 
 		// TODO edge need to be set here when we implement the right edge finish write
-		m.reset(h, m.getWriter())
+		m.reset(h) //, m.getWriter())
 	}
 }
 
@@ -489,7 +492,7 @@ func (m *FileSplitter) sum(b []byte, index int, count uint64, job *altJob, w Sec
 	// span is the total size under the chunk
 	spanBytes := lengthToSpan(dataToSpanSize)
 
-	log.Debug("job sum", "bytelength", len(b), "level", job.level, "index", index, "count", count, "jobcount", job.count, "length", dataToHashSize, "span", spanBytes, "job", fmt.Sprintf("%p", job), "w", fmt.Sprintf("%p", w), "edge", job.edge)
+	//log.Debug("job sum", "bytelength", len(b), "level", job.level, "index", index, "count", count, "jobcount", job.count, "length", dataToHashSize, "span", spanBytes, "job", fmt.Sprintf("%p", job), "w", fmt.Sprintf("%p", w), "edge", job.edge)
 	s := w.Sum(
 		nil,
 		dataToHashSize,
@@ -552,7 +555,6 @@ func (m *FileSplitter) getWriterPool() SectionHasherTwo {
 func (m *FileSplitter) putWriterPool(writer SectionHasherTwo) {
 	writer.Reset()
 	m.writerPool.Put(writer)
-	//<-m.writerQueue
 }
 
 // resets a hasherJob for re-use.
@@ -568,9 +570,9 @@ func (m *FileSplitter) putWriterPool(writer SectionHasherTwo) {
 //		m.reset(h.parent, m.getWriter(), dataOffset, levelOffset/m.writerBatchSize, edge+1)
 //	}
 //}
-func (m *FileSplitter) reset(h *altJob, w SectionHasherTwo) {
+func (m *FileSplitter) reset(h *altJob) { //, w SectionHasherTwo) {
 	h.count = 0
-	h.writer = w
+	h.writer = m.getWriter()
 }
 
 // calculates if the given data write length results in a balanced tree
@@ -583,7 +585,7 @@ func (m *FileSplitter) isBalancedBoundary(count uint64) bool {
 type altJob struct {
 	parent *altJob
 	count  uint64 // amount of writes on this job
-	edge   int    // > 0 on last write, incremented by 1 every level traversed on right edge, used to determine skipping levels on dangling chunk
+	edge   int32  // > 0 on last write, incremented by 1 every level traversed on right edge, used to determine skipping levels on dangling chunk
 	level  int
 	writer SectionHasherTwo
 }
