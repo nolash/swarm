@@ -1,23 +1,62 @@
 package storage
 
 import (
+	"bytes"
+	"crypto/rand"
+	"sync/atomic"
 	"testing"
 
+	"github.com/ethersphere/swarm/bmt"
 	"github.com/ethersphere/swarm/log"
+	"golang.org/x/crypto/sha3"
 )
 
-func newTestSplitter() (*FileSplitterTwo, error) {
+func newTestSplitter(hasherFunc func() bmt.SectionWriter) (*FileSplitterTwo, error) {
 	hashFunc := func() SectionHasherTwo {
 		return &wrappedHasher{
-			SectionWriter: newAsyncHasher(),
+			SectionWriter: hasherFunc(),
 		}
 	}
 	dataHasher := newSyncHasher()
 	return NewFileSplitterTwo(dataHasher, hashFunc)
 }
 
+// mock writer for testing and debugging
+// implements SectionHasherTwo
+type testFileWriter struct {
+	count       uint64
+	sectionSize uint64
+	data        []byte
+}
+
+func newTestFileWriter(cp int, sectionSize uint64) *testFileWriter {
+	return &testFileWriter{
+		sectionSize: sectionSize,
+		data:        make([]byte, cp),
+	}
+}
+
+func (t *testFileWriter) SectionSize() int {
+	return int(t.sectionSize)
+}
+
+func (t *testFileWriter) Write(index int, b []byte) {
+	copy(t.data[uint64(index)*t.sectionSize:], b)
+	atomic.AddUint64(&t.count, sectionCount(b, t.sectionSize))
+}
+
+func (t *testFileWriter) Sum(b []byte, length int, span []byte) []byte {
+	h := sha3.NewLegacyKeccak256()
+	h.Write(b)
+	return h.Sum(nil)
+}
+
+func (t *testFileWriter) Reset() {
+	return
+}
+
 func TestFileSplitterParentIndex(t *testing.T) {
-	fh, err := newTestSplitter()
+	fh, err := newTestSplitter(newAsyncHasher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +64,7 @@ func TestFileSplitterParentIndex(t *testing.T) {
 	vals := []uint64{31, 32, 33, 127, 128, 129, 128*128 - 1, 128 * 128, 128*128 + 1}
 	expects := []uint64{0, 0, 0, 0, 1, 1, 127, 128, 128}
 	for i, v := range vals {
-		idx := fh.getParentIndex(v)
+		idx := fh.getParentSection(v)
 		if idx != expects[i] {
 			t.Fatalf("parent index %d expected %d, got %d", v, expects[i], idx)
 		}
@@ -33,29 +72,64 @@ func TestFileSplitterParentIndex(t *testing.T) {
 }
 
 func TestFileSplitterCreateJob(t *testing.T) {
-	fh, err := newTestSplitter()
+	fh, err := newTestSplitter(newAsyncHasher)
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := fh.newHashJobTwo(1, 0, 0)
+
+	idx := fh.chunkSize * fh.chunkSize
+	job := fh.newHashJobTwo(1, idx, idx)
+	if job.parentSection != idx/fh.branches {
+		t.Fatalf("Expected parent parentSection %d, got %d", idx/fh.branches, job.parentSection)
+	}
 	parent := fh.getOrCreateParent(job)
 	if parent.level != 2 {
 		t.Fatalf("Expected parent level 2, got %d", parent.level)
 	}
+	if parent.firstDataSection != idx {
+		t.Fatalf("Expected parent dataIndex %d, got %d", idx, parent.parentSection)
+	}
+	if parent.parentSection != job.parentSection/fh.branches {
+		t.Fatalf("Expected parent parentSection %d, got %d", job.parentSection/fh.branches, parent.parentSection)
+	}
+}
 
-	idx := fh.chunkSize * fh.chunkSize
-	job = fh.newHashJobTwo(1, idx, idx)
-	if job.parentIndex != idx/fh.branches {
-		t.Fatalf("Expected parent parentIndex %d, got %d", idx/fh.branches, job.parentIndex)
+func TestFileSplitterWriteJob(t *testing.T) {
+	w := newTestFileWriter(chunkSize, segmentSize)
+	fh, err := newTestSplitter(func() bmt.SectionWriter {
+		return w
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	parent = fh.getOrCreateParent(job)
-	if parent.level != 2 {
-		t.Fatalf("Expected parent level 2, got %d", parent.level)
+
+	// filesplitter creates the first level 1 job for dataindex 0 automatically
+	job := fh.lastJob
+	jobIndexed, ok := fh.levels[1].jobs[0]
+	if !ok {
+		t.Fatalf("expected level 1 idx 0 job to be in level index")
 	}
-	if parent.dataIndex != idx {
-		t.Fatalf("Expected parent dataIndex %d, got %d", idx, parent.parentIndex)
+	if job != jobIndexed {
+		t.Fatalf("expected job in index to match initial job")
 	}
-	if parent.parentIndex != job.parentIndex/fh.branches {
-		t.Fatalf("Expected parent parentIndex %d, got %d", job.parentIndex/fh.branches, parent.parentIndex)
+	data := make([]byte, segmentSize)
+	c, err := rand.Read(data)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if c != segmentSize {
+		t.Fatalf("short rand read %d", c)
+	}
+	job.write(2, data)
+	if !bytes.Equal(w.data[segmentSize*2:segmentSize*2+segmentSize], data) {
+		t.Fatalf("data mismatch in writer at pos %d", segmentSize*2)
+	}
+
+	fh.sum(job)
+
+	_, ok = fh.levels[1].jobs[0]
+	if ok {
+		t.Fatalf("expected level 1 idx 0 job to be deleted")
+	}
+
 }
