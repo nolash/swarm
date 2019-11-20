@@ -389,7 +389,7 @@ func (m *FileSplitter) Write(index int, b []byte) {
 		copy(m.topHash, ref)
 	}
 	log.Trace("summed data", "h", fmt.Sprintf("%x", ref), "span", span)
-	m.write(m.lastJob, index/m.branches, ref)
+	m.write(m.lastJob, index%m.branches, ref)
 }
 
 // implements SectionHasherTwo
@@ -400,7 +400,7 @@ func (m *FileSplitter) Sum(b []byte, length int, span []byte) []byte {
 	for i := m.lastCount; i > 0; i /= 128 {
 		m.targetLevel += 1
 	}
-	log.Warn("targetlevel", "l", m.targetLevel)
+	log.Debug("set targetlevel", "l", m.targetLevel)
 	m.lastJob.edge = 1
 	if m.lastWrite <= uint64(m.sectionSize*m.branches) {
 		return m.topHash
@@ -466,7 +466,12 @@ func (m *FileSplitter) sum(b []byte, index int, count uint64, job *altJob, w Sec
 		// if passed data length is zero means the call came from Sum()
 		// we add the last non full chunk of data
 		// TODO: If ends on a chunk boundary, nothing will be added and the result will be one chunk short
-		dataToSpanSize += m.lastWrite % uint64(m.sectionSize*m.branches)
+		tailSize := m.lastWrite % uint64(m.sectionSize*m.branches)
+		if tailSize == 0 {
+			dataToSpanSize += uint64(m.sectionSize * m.branches)
+		} else {
+			dataToSpanSize += tailSize
+		}
 	} else if job.edge > 0 {
 		if job.edge == m.targetLevel {
 			copy(m.topHash, b)
@@ -484,7 +489,7 @@ func (m *FileSplitter) sum(b []byte, index int, count uint64, job *altJob, w Sec
 	// span is the total size under the chunk
 	spanBytes := lengthToSpan(dataToSpanSize)
 
-	log.Debug("job sum", "bytelength", len(b), "level", job.level, "index", index, "count", count, "jobcount", job.count, "length", dataToHashSize, "span", spanBytes, "w", fmt.Sprintf("%p", w), "job", fmt.Sprintf("%p", job), "edge", job.edge)
+	log.Debug("job sum", "bytelength", len(b), "level", job.level, "index", index, "count", count, "jobcount", job.count, "length", dataToHashSize, "span", spanBytes, "job", fmt.Sprintf("%p", job), "w", fmt.Sprintf("%p", w), "edge", job.edge)
 	s := w.Sum(
 		nil,
 		dataToHashSize,
@@ -498,7 +503,7 @@ func (m *FileSplitter) sum(b []byte, index int, count uint64, job *altJob, w Sec
 
 	// reset the chained writer
 	m.putWriter(w)
-	if job.edge == m.targetLevel {
+	if job.edge > 0 && job.edge == m.targetLevel {
 		log.Debug("reached target")
 		return
 	}
@@ -516,7 +521,8 @@ func (m *FileSplitter) sum(b []byte, index int, count uint64, job *altJob, w Sec
 
 	// write to the parent job
 	// the section index to write to is divided by the branches
-	m.write(p, (index-1)/m.branches, s)
+	//m.write(p, (index-1)/m.branches, s)
+	m.write(p, index/m.branches, s)
 
 }
 
@@ -585,6 +591,5 @@ type altJob struct {
 func (h *altJob) inc() (uint64, uint64) {
 	oldCount := atomic.LoadUint64(&h.count)
 	newCount := atomic.AddUint64(&h.count, 1)
-	log.Warn("incd", "c", h.count)
 	return oldCount, newCount
 }

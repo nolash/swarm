@@ -70,7 +70,7 @@ var (
 	}
 
 	start = 0
-	end   = 13 //len(dataLengths)
+	end   = len(dataLengths)
 )
 
 type wrappedHasher struct {
@@ -124,9 +124,8 @@ func TestChainedFileHasher(t *testing.T) {
 			fh.Write(int(offset/32), data[offset:offset+l])
 			offset += 4096
 		}
-		//span := lengthToSpan(uint64(dataLength) % 4096)
 		refHash := fh.Sum(nil, 0, nil) //span)
-		log.Warn("Final", "sum", fmt.Sprintf("%x", refHash))
+		t.Logf("Final (%02d): %x (expected %s)", i, refHash, expected[i])
 	}
 }
 
@@ -144,40 +143,40 @@ func benchmarkChainedFileHasher(b *testing.B) {
 	}
 	_, data := generateSerialData(int(dataLength), 255, 0)
 	b.ResetTimer()
-	//for i := 0; i < b.N; i++ {
-	hashFunc := func() SectionHasherTwo {
-		//return newTreeHasherWrapper()
-		return &wrappedHasher{
-			SectionWriter: newAsyncHasher(),
+	for i := 0; i < b.N; i++ {
+		hashFunc := func() SectionHasherTwo {
+			//return newTreeHasherWrapper()
+			return &wrappedHasher{
+				SectionWriter: newAsyncHasher(),
+			}
 		}
-	}
-	dataHasher := newSyncHasher()
-	fh, err := NewFileSplitter(dataHasher, hashFunc, writerModePool)
-	if err != nil {
-		b.Fatal(err)
-	}
-	//_ = SectionHasherTwo(fh)
-	l := int64(4096)
-	offset := int64(0)
-	//		for j := int64(0); j < dataLength; j += 32 {
-	//			remain := dataLength - offset
-	//			if remain < l {
-	//				l = remain
-	//			}
-	//			fh.Write(int(offset/32), data[offset:offset+l])
-	//			offset += 32
-	//		}
-	for j := int64(0); j < dataLength; j += 4096 {
-		remain := dataLength - offset
-		if remain < l {
-			l = remain
+		dataHasher := newSyncHasher()
+		fh, err := NewFileSplitter(dataHasher, hashFunc, writerModePool)
+		if err != nil {
+			b.Fatal(err)
 		}
-		fh.Write(int(offset/32), data[offset:offset+l])
-		offset += 4096
+		//_ = SectionHasherTwo(fh)
+		l := int64(4096)
+		offset := int64(0)
+		//		for j := int64(0); j < dataLength; j += 32 {
+		//			remain := dataLength - offset
+		//			if remain < l {
+		//				l = remain
+		//			}
+		//			fh.Write(int(offset/32), data[offset:offset+l])
+		//			offset += 32
+		//		}
+		for j := int64(0); j < dataLength; j += 4096 {
+			remain := dataLength - offset
+			if remain < l {
+				l = remain
+			}
+			fh.Write(int(offset/32), data[offset:offset+l])
+			offset += 4096
+		}
+		refHash := fh.Sum(nil, 0, nil)
+		log.Info("res", "l", dataLength, "h", refHash)
 	}
-	//refHash := fh.Sum(nil, 0, nil)
-	//log.Info("res", "l", dataLength, "h", refHash)
-	//}
 }
 
 func TestReferenceFileHasher(t *testing.T) {
