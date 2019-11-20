@@ -286,16 +286,14 @@ type FileSplitter struct {
 	writerPadSize   uint64            // cached padding size of the chained writer
 	balancedTable   map[uint64]uint64 // maps write counts to bytecounts for
 
+	topHash     []byte  // caches the last hash written to the first data index on the top level
 	lastJob     *altJob // keeps pointer to the job for the first reference level
 	lastWrite   uint64  // total number of bytes currently written
 	lastCount   uint64  // total number of sections currently written
 	targetCount uint64  // set when sum is called, is total number of bytes finally written
 	targetLevel int     // set when sum is called, is tree level of root chunk
 
-	debugJobChange uint32 // debug counter for job reset calls
-	debugJobCreate uint32 // debug counter for new job allocations
-	debugWrites    map[string][]int
-	resultC        chan []byte
+	resultC chan []byte
 
 	dataHasher *bmt.Hasher
 	getWriter  func() SectionHasherTwo // mode-dependent function to assign hasher
@@ -303,9 +301,7 @@ type FileSplitter struct {
 	writerFunc func() SectionHasherTwo // hasher function used by manual and GC modes
 	writerMu   sync.Mutex
 
-	writerQueue       chan struct{}         // throttles allocation of hashers
-	writerPool        sync.Pool             // chained writers providing hashing in Pool mode
-	writerManualQueue chan SectionHasherTwo // chained writers providing hashing in Manual mode
+	writerPool sync.Pool // chained writers providing hashing in Pool mode
 }
 
 func NewFileSplitter(dataHasher *bmt.Hasher, writerFunc func() SectionHasherTwo, mode int) (*FileSplitter, error) {
@@ -323,35 +319,23 @@ func NewFileSplitter(dataHasher *bmt.Hasher, writerFunc func() SectionHasherTwo,
 		writerBatchSize: writer.BatchSize(),
 		parentBatchSize: writer.BatchSize() * branches,
 		writerPadSize:   writer.PadSize(),
-		writerQueue:     make(chan struct{}, 1000),
 		balancedTable:   make(map[uint64]uint64),
 		writerFunc:      writerFunc,
-		debugWrites:     make(map[string][]int),
 		dataHasher:      dataHasher,
 		resultC:         make(chan []byte),
+		topHash:         make([]byte, writer.SectionSize()),
 	}
 
 	// see writerMode*
 	switch mode {
-	case writerModeManual:
-		f.writerManualQueue = make(chan SectionHasherTwo, 1000)
-
-		for i := 0; i < 1000; i++ {
-			f.writerManualQueue <- writerFunc()
-		}
-		f.getWriter = f.getWriterManual
-		f.putWriter = f.putWriterManual
-	case writerModeGC:
-
-		f.getWriter = f.getWriterGC
-		f.putWriter = f.putWriterGC
-
 	case writerModePool:
 		f.writerPool.New = func() interface{} {
 			return writerFunc()
 		}
 		f.getWriter = f.getWriterPool
 		f.putWriter = f.putWriterPool
+	default:
+		return nil, fmt.Errorf("invalid mode")
 	}
 
 	// create lookup table for data write counts that result in balanced trees
@@ -393,35 +377,41 @@ func (m *FileSplitter) SectionSize() int {
 // implements SectionHasherTwo
 func (m *FileSplitter) Write(index int, b []byte) {
 
-	//	m.write(m.lastJob, index%m.branches, b, true)
 	sectionWrites := ((len(b) - 1) / 32) + 1
 	m.lastCount += uint64(sectionWrites)
 	m.lastWrite += uint64(len(b))
 	log.Trace("data write", "offset", index, "lastwrite", m.lastWrite, "lastcount", m.lastCount, "sectionsinwrite", sectionWrites, "w", fmt.Sprintf("%p", m.lastJob.writer))
-	m.dataHasher.ResetWithLength(lengthToSpan(uint64(len(b))))
+	span := lengthToSpan(uint64(len(b)))
+	m.dataHasher.ResetWithLength(span)
 	m.dataHasher.Write(b)
 	ref := m.dataHasher.Sum(nil)
-	log.Trace("summed data", "h", fmt.Sprintf("%x", ref))
+	if m.lastWrite <= uint64(m.sectionSize*m.branches) {
+		copy(m.topHash, ref)
+	}
+	log.Trace("summed data", "h", fmt.Sprintf("%x", ref), "span", span)
 	m.write(m.lastJob, index/m.branches, ref)
 }
 
 // implements SectionHasherTwo
 // TODO is noop
 func (m *FileSplitter) Sum(b []byte, length int, span []byte) []byte {
+
 	m.targetCount = m.lastCount
 	for i := m.lastCount; i > 0; i /= 128 {
 		m.targetLevel += 1
 	}
 	log.Warn("targetlevel", "l", m.targetLevel)
 	m.lastJob.edge = 1
-	m.sum(b, int(m.lastJob.count), m.lastJob.count-1, m.lastJob, m.lastJob.writer, m.lastJob.parent)
+	if m.lastWrite <= uint64(m.sectionSize*m.branches) {
+		return m.topHash
+	}
+	m.sum(b, int(m.lastJob.count-1), m.lastJob.count-1, m.lastJob, m.lastJob.writer, m.lastJob.parent)
 	return <-m.resultC
 }
 
 // implements SectionHasherTwo
 // TODO is noop
 func (m *FileSplitter) Reset() {
-	close(m.writerQueue)
 	log.Warn("filesplitter reset called, not implemented")
 }
 
@@ -445,7 +435,7 @@ func (m *FileSplitter) write(h *altJob, index int, b []byte) {
 	w := h.writer
 	m.writerMu.Unlock()
 	w.Write(index, b)
-	log.Debug("job write", "level", h.level, "index", index, "bytes", hexutil.Encode(b), "w", fmt.Sprintf("%p", w))
+	log.Debug("job write", "level", h.level, "index", index, "bytes", hexutil.Encode(b), "job", fmt.Sprintf("%p", h), "w", fmt.Sprintf("%p", w), "edge", h.edge)
 
 	// sum data if:
 	// * the write is on a threshold, or
@@ -467,29 +457,51 @@ func (m *FileSplitter) write(h *altJob, index int, b []byte) {
 //func (m *FileSplitter) sum(b []byte, index int, oldcount uint64, dataOffset uint64, levelOffset uint64, job *hasherJob, w SectionHasherTwo, p *hasherJob) {
 func (m *FileSplitter) sum(b []byte, index int, count uint64, job *altJob, w SectionHasherTwo, p *altJob) {
 
-	sz := count * uint64(m.sectionSize) * uint64(job.level*m.branches)
-	//if len(b) == 0 {
-	//	sz = m.lastWrite % uint64(m.sectionSize*m.branches)
-	//} else if job.edge > 1 {
-	if job.edge > 1 {
-		sz = job.count * uint64(m.sectionSize)
+	// the size of the actual data passed to the hasher
+	dataToHashSize := int(count+1) * m.sectionSize
+
+	// the size of the data the resulting hash represents
+	dataToSpanSize := count * uint64(m.sectionSize) * uint64(job.level*m.branches)
+	if len(b) == 0 {
+		// if passed data length is zero means the call came from Sum()
+		// we add the last non full chunk of data
+		// TODO: If ends on a chunk boundary, nothing will be added and the result will be one chunk short
+		dataToSpanSize += m.lastWrite % uint64(m.sectionSize*m.branches)
+	} else if job.edge > 0 {
+		if job.edge == m.targetLevel {
+			copy(m.topHash, b)
+			m.resultC <- b
+			return
+		}
+		dataToSpanSize += m.lastWrite % uint64(m.sectionSize*m.branches)
+
 	} else {
-		sz += uint64(len(b)) * uint64(job.level*m.branches)
+		// if we have data length it means the call comes from write() and represents a 128 section write
+		// however, the last section may be shorter than the section size
+		dataToSpanSize += uint64(len(b)) * uint64(job.level*m.branches)
 	}
 
 	// span is the total size under the chunk
-	spanBytes := lengthToSpan(sz)
+	spanBytes := lengthToSpan(dataToSpanSize)
 
-	log.Debug("job sum", "bytelength", len(b), "level", job.level, "index", index, "count", count, "length", sz, "span", spanBytes, "w", fmt.Sprintf("%p", w))
+	log.Debug("job sum", "bytelength", len(b), "level", job.level, "index", index, "count", count, "jobcount", job.count, "length", dataToHashSize, "span", spanBytes, "w", fmt.Sprintf("%p", w), "job", fmt.Sprintf("%p", job), "edge", job.edge)
 	s := w.Sum(
 		nil,
-		int(sz),
+		dataToHashSize,
 		spanBytes,
 	)
-	log.Debug("hash result", "s", hexutil.Encode(s), "length", sz, "p", fmt.Sprintf("%p", p))
+	log.Debug("hash result", "s", hexutil.Encode(s), "length", dataToHashSize, "span", spanBytes, "p", fmt.Sprintf("%p", p))
+	if index == 0 {
+		log.Debug("copying hash")
+		copy(m.topHash, s)
+	}
 
 	// reset the chained writer
 	m.putWriter(w)
+	if job.edge == m.targetLevel {
+		log.Debug("reached target")
+		return
+	}
 
 	// we only create a parent object on a job on the first write
 	// this way, if it is nil and we are working the right edge, we know when to skip
@@ -501,10 +513,7 @@ func (m *FileSplitter) sum(b []byte, index int, count uint64, job *altJob, w Sec
 	if job.edge > 0 {
 		p.edge = job.edge + 1
 	}
-	if job.edge == m.targetLevel {
-		m.resultC <- s
-		return
-	}
+
 	// write to the parent job
 	// the section index to write to is divided by the branches
 	m.write(p, (index-1)/m.branches, s)
@@ -528,16 +537,6 @@ func (m *FileSplitter) newJob(level int) *altJob {
 }
 
 // see writerMode consts
-func (m *FileSplitter) getWriterGC() SectionHasherTwo {
-	return m.writerFunc()
-}
-
-// see writerMode consts
-func (m *FileSplitter) putWriterGC(w SectionHasherTwo) {
-	// noop
-}
-
-// see writerMode consts
 func (m *FileSplitter) getWriterPool() SectionHasherTwo {
 	//m.writerQueue <- struct{}{}
 	return m.writerPool.Get().(SectionHasherTwo)
@@ -548,17 +547,6 @@ func (m *FileSplitter) putWriterPool(writer SectionHasherTwo) {
 	writer.Reset()
 	m.writerPool.Put(writer)
 	//<-m.writerQueue
-}
-
-// see writerMode consts
-func (m *FileSplitter) getWriterManual() SectionHasherTwo {
-	return <-m.writerManualQueue
-}
-
-// see writerMode consts
-func (m *FileSplitter) putWriterManual(writer SectionHasherTwo) {
-	writer.Reset()
-	m.writerManualQueue <- writer
 }
 
 // resets a hasherJob for re-use.
@@ -597,5 +585,6 @@ type altJob struct {
 func (h *altJob) inc() (uint64, uint64) {
 	oldCount := atomic.LoadUint64(&h.count)
 	newCount := atomic.AddUint64(&h.count, 1)
+	log.Warn("incd", "c", h.count)
 	return oldCount, newCount
 }

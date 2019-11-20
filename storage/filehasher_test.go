@@ -26,25 +26,25 @@ var pool *bmt.TreePool
 
 var (
 	dataLengths = []int{31, // 0
-		32,                    // 1
-		33,                    // 2
-		63,                    // 3
-		64,                    // 4
-		65,                    // 5
-		chunkSize,             // 6
-		chunkSize + 31,        // 7
-		chunkSize + 32,        // 8
-		chunkSize + 63,        // 9
-		chunkSize + 64,        // 10
-		chunkSize * 2,         // 11
-		chunkSize*2 + 32,      // 12
-		chunkSize * 128,       // 13
-		chunkSize*128 + 31,    // 14
-		chunkSize*128 + 32,    // 15
-		chunkSize*128 + 64,    // 16
-		chunkSize * 129,       // 17
-		chunkSize * 130,       // 18
-		chunkSize * 128 * 128, // 19
+		32,                     // 1
+		33,                     // 2
+		63,                     // 3
+		64,                     // 4
+		65,                     // 5
+		chunkSize,              // 6
+		chunkSize + 31,         // 7
+		chunkSize + 32,         // 8
+		chunkSize + 63,         // 9
+		chunkSize + 64,         // 10
+		chunkSize * 2,          // 11
+		chunkSize*2 + 32,       // 12
+		chunkSize * 128,        // 13
+		chunkSize*128 + 31,     // 14
+		chunkSize*128 + 32,     // 15
+		chunkSize*128 + 64,     // 16
+		chunkSize * 129,        // 17
+		chunkSize * 130,        // 18
+		chunkSize*128*128 - 32, // 19
 	}
 	expected = []string{
 		"ece86edb20669cc60d142789d464d57bdf5e33cb789d443f608cbd81cfa5697d", // 0
@@ -69,8 +69,8 @@ var (
 		"522194562123473dcfd7a457b18ee7dee8b7db70ed3cfa2b73f348a992fdfd3b", // 19
 	}
 
-	start = 7
-	end   = 15 //len(dataLengths)
+	start = 0
+	end   = 13 //len(dataLengths)
 )
 
 type wrappedHasher struct {
