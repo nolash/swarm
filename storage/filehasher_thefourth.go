@@ -40,7 +40,7 @@ type hashJobTwo struct {
 	level            int32            // tree level of job
 	levelIndex       uint64           // chunk index in own level
 	firstDataSection uint64           // first data section index this job points to
-	dataSize         uint64           // data size at the time of Sum() call
+	dataSize         uint64           // data size at the time of Sum() call, used to calculate the correct span value
 	parentSection    uint64           // section index in parent job this job will write its hash to
 	count            uint64           // number of writes currently made to this job
 	targetLevel      int32            // target level, set when Sum() is called
@@ -98,23 +98,24 @@ func (m *FileSplitterTwo) sum(job *hashJobTwo) {
 	// if dataSize is 0 it follows that all chunks below are full
 	// we can then calculate the size of the data under the span
 	// from the amount of sections written and which level it is on
+	count := atomic.LoadUint64(&job.count)
 	if dataSize == 0 {
 		level := uint64(job.level)
-		count := atomic.LoadUint64(&job.count)
 		dataSize = count * (level * m.branches * m.sectionSize)
 	}
 
-	// calculate the necessary SectionWriter parameters
+	// span is the serialized size data embedded in the chunk
 	span := lengthToSpan(dataSize)
-	count := atomic.LoadUint64(&job.count)
-	thisRefsSize := count * sectionSize
 
-	r := job.writer.Sum(nil, int(thisRefsSize), span)
-	job.log(fmt.Sprintf("job sum: %v, %x", span, r))
+	// perform the hashing
+	// thisRefsSize is the length of the actual hash input data to be hashed
+	thisRefsSize := count * sectionSize
+	result := job.writer.Sum(nil, int(thisRefsSize), span)
+	job.log(fmt.Sprintf("job sum: %v, %x", span, result))
 
 	// write to parent corresponding index
 	parent := m.getOrCreateParent(job)
-	go m.write(parent, int(job.parentSection%m.branches), r)
+	go m.write(parent, int(job.parentSection%m.branches), result)
 	m.freeJob(job)
 }
 
@@ -295,7 +296,7 @@ func (m *FileSplitterTwo) newHashJobTwo(level int32, dataSectionIndex uint64, th
 	levelIndex := m.getIndexFromSection(parentSection)
 	m.writerMu.Lock()
 	m.levels[level].jobs[levelIndex] = job
-	log.Trace("add job", "job", job, "levelindex", levelIndex)
+	job.log(fmt.Sprintf("add job: levelindex %d", levelIndex))
 	m.writerMu.Unlock()
 	return job
 }
@@ -412,7 +413,7 @@ func (m *FileSplitterTwo) Write(index int, b []byte) {
 	// sum() will free the existing job
 	if m.lastCount%(m.branches*m.branches) == 0 {
 		log.Trace("batch threshold")
-		m.lastJob = m.newHashJobTwo(1, m.lastCount, m.lastCount)
+		m.lastJob = m.newHashJobTwo(1, m.lastCount, m.lastCount/m.branches)
 	}
 	// TODO: it should be possible to put this in a goroutine as long as the original job is preserved and passed to sum/write
 	// but when putting in goroutine
