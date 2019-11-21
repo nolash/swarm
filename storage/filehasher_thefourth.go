@@ -57,7 +57,7 @@ func (h *hashJobTwo) log(s string) {
 	dataSize := atomic.LoadUint64(&h.dataSize)
 	targetLevel := atomic.LoadInt32(&h.targetLevel)
 	count := atomic.LoadUint64(&h.count)
-	log.Trace(s, "level", h.level, "levelindex", h.levelIndex, "firstdatasection", h.firstDataSection, "parentsection", h.parentSection, "datasize", dataSize, "count", count, "targetLevel", targetLevel)
+	log.Trace(s, "level", h.level, "levelindex", h.levelIndex, "firstdatasection", h.firstDataSection, "parentsection", h.parentSection, "datasize", dataSize, "count", count, "targetLevel", targetLevel, "targetCount", h.targetCount, "p", fmt.Sprintf("%p", h))
 }
 
 // writes to underlying writer
@@ -259,7 +259,7 @@ func (m *FileSplitterTwo) finish() {
 	// calculate target count
 	targetCount := m.lastCount - job.firstDataSection
 	job.targetCount = targetCount
-	log.Debug("finish", "short", job.dataSize, "targetLevel", job.targetLevel, "targetcount", targetCount)
+	log.Debug("finish", "short", job.dataSize, "targetLevel", job.targetLevel, "targetcount", targetCount, "lastCount", m.lastCount, "firstdataSection", job.firstDataSection)
 	m.writerMu.Unlock()
 
 	level := int32(1) // first level of parent
@@ -421,6 +421,12 @@ func (m *FileSplitterTwo) Write(index int, b []byte) {
 }
 
 // implements SectionHasherTwo
+//
+// BUG: putting m.finish() only to be executed when tree is not balanced hangs the result
+// but there is no coordination that the targetLevel will be set before the cascading hashers in case of balanced tree will complete
+// we may need a channel trigger for spewing out the tophash
+//
+// also consider alternative implementation with buffered channels
 func (m *FileSplitterTwo) Sum(b []byte, length int, span []byte) []byte {
 
 	log.Debug("Sum()", "writes", m.lastWrite, "count", m.lastCount)
