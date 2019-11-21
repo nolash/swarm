@@ -155,4 +155,30 @@ func TestFileSplitterWriteJob(t *testing.T) {
 		t.Fatalf("hash result mismatch in writer after second sum")
 	}
 
+	job.write(3, data[:10])
+
+}
+
+func TestFileSplitterBMT(t *testing.T) {
+	fh, err := newTestSplitter(newAsyncHasher)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i := 0
+	dataLength := dataLengths[i]
+	_, data := generateSerialData(dataLength, 255, 0)
+	log.Info(">>>>>>>>> NewFileHasher start", "i", i, "len", dataLength)
+	offset := 0
+	l := 4096
+	for j := 0; j < dataLength; j += 4096 {
+		remain := dataLength - offset
+		if remain < l {
+			l = remain
+		}
+		fh.Write(int(offset/32), data[offset:offset+l])
+		offset += 4096
+	}
+	refHash := fh.Sum(nil, 0, nil)
+	t.Logf("result: %x", refHash)
 }
