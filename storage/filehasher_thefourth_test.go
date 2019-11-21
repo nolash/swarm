@@ -61,6 +61,46 @@ func (t *testFileWriter) Reset() {
 	return
 }
 
+func TestLowerBoundaryLevel(t *testing.T) {
+	fh, err := newTestSplitter(newAsyncHasher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Info("filehasher set up", "batchsize", fh.BatchSize(), "padsize", fh.PadSize())
+
+	levels := []int32{1, 2}
+	dataCounts := []uint64{
+		fh.branches*fh.branches - 1,
+		fh.branches * fh.branches,
+		fh.branches*fh.branches + 5,
+		fh.branches*fh.branches + fh.branches - 1,
+		fh.branches*fh.branches + fh.branches,
+	}
+	expects := []uint64{
+		fh.branches * (fh.branches - 1),
+		fh.branches * fh.branches,
+		fh.branches * fh.branches,
+		fh.branches * fh.branches,
+		fh.branches * (fh.branches + 1),
+		0,
+		fh.branches * fh.branches,
+		fh.branches * fh.branches,
+		fh.branches * fh.branches,
+		fh.branches * fh.branches,
+	}
+
+	for i, lvl := range levels {
+		for j, c := range dataCounts {
+			r := fh.getLowerBoundaryByLevel(c, lvl)
+			expect := expects[i*len(dataCounts)+j]
+			if r != expect {
+				t.Fatalf("(%d/%d) level:%d/count:%d - expect %d, got %d", i, i*len(dataCounts)+j, lvl, c, expect, r)
+			}
+
+		}
+	}
+}
+
 func TestJobCountFromDataCount(t *testing.T) {
 	fh, err := newTestSplitter(newAsyncHasher)
 	if err != nil {

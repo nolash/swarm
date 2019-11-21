@@ -40,7 +40,7 @@ type hashJobTwo struct {
 	level            int32            // tree level of job
 	levelIndex       uint64           // chunk index in own level
 	firstDataSection uint64           // first data section index this job points to
-	dataSize         uint64           // size of data underlying span represents
+	dataSize         uint64           // data size at the time of Sum() call
 	parentSection    uint64           // section index in parent job this job will write its hash to
 	count            uint64           // number of writes currently made to this job
 	targetLevel      int32            // target level, set when Sum() is called
@@ -57,7 +57,7 @@ func (h *hashJobTwo) log(s string) {
 	dataSize := atomic.LoadUint64(&h.dataSize)
 	targetLevel := atomic.LoadInt32(&h.targetLevel)
 	count := atomic.LoadUint64(&h.count)
-	log.Trace(s, "level", h.level, "levelindex", h.levelIndex, "datasection", h.firstDataSection, "parentsection", h.parentSection, "count", count, "dataSize", dataSize, "targetLevel", targetLevel)
+	log.Trace(s, "level", h.level, "levelindex", h.levelIndex, "datasection", h.firstDataSection, "parentsection", h.parentSection, "datasize", dataSize, "count", count, "targetLevel", targetLevel)
 }
 
 // writes to underlying writer
@@ -214,6 +214,15 @@ func (m *FileSplitterTwo) getIndexFromSection(sectionCount uint64) uint64 {
 	return sectionCount / m.branches
 }
 
+// calculates
+func (m *FileSplitterTwo) getLowerBoundaryByLevel(dataCount uint64, level int32) uint64 {
+	spanCount := uint64(1)
+	for i := int32(0); i < level; i++ {
+		spanCount *= m.branches
+	}
+	return (dataCount / spanCount) * spanCount
+}
+
 // calculates the expected write count on a given level from the provided data byte count
 func (m *FileSplitterTwo) getJobCountFromDataCount(dataCount uint64, targetLevel int32) uint64 {
 	targetSection := dataCount
@@ -235,6 +244,8 @@ func (m *FileSplitterTwo) freeJob(job *hashJobTwo) {
 // shortLength is the size of the last chunk on data level
 // if shortLength is zero, the full chunk length will be used
 func (m *FileSplitterTwo) finish() {
+
+	// get the last level that will be written to
 	targetLevel := int32(getLevelsFromLength(m.lastWrite, m.sectionSize, m.branches) - 1)
 	m.writerMu.Lock()
 	job := m.lastJob
@@ -284,6 +295,8 @@ func (m *FileSplitterTwo) newHashJobTwo(level int32, dataSectionIndex uint64, th
 }
 
 // creates a new hash parent job object
+// WRONG!!!!!!!!! FOR FUCKS SAKE
+// firstDataSection needs to be the leftmost chunk alignment on the level above
 func (m *FileSplitterTwo) getOrCreateParent(job *hashJobTwo) *hashJobTwo {
 
 	// first, check if parent already exists
