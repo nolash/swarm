@@ -2,7 +2,10 @@ package storage
 
 import (
 	"bytes"
+	"fmt"
 	"math/rand"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -181,5 +184,43 @@ func TestFileSplitterBMT(t *testing.T) {
 		}
 		refHash := fh.Sum(nil, 0, nil)
 		t.Logf("result %d: %x", i, refHash)
+	}
+}
+
+func BenchmarkFileSplitter(b *testing.B) {
+	for i := start; i < end; i++ {
+		b.Run(fmt.Sprintf("%d", dataLengths[i]), benchmarkFileSplitter)
+	}
+}
+
+func benchmarkFileSplitter(t *testing.B) {
+	params := strings.Split(t.Name(), "/")
+	dataLengthParam, err := strconv.ParseInt(params[1], 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataLength := int(dataLengthParam)
+
+	_, data := generateSerialData(dataLength, 255, 0)
+
+	fh, err := newTestSplitter(newAsyncHasher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.ResetTimer()
+	for i := 0; i < t.N; i++ {
+
+		offset := 0
+		l := 4096
+		for j := 0; j < dataLength; j += 4096 {
+			remain := dataLength - offset
+			if remain < l {
+				l = remain
+			}
+			fh.Write(int(offset/32), data[offset:offset+l])
+			offset += 4096
+		}
+		fh.Sum(nil, 0, nil)
+		fh.Reset()
 	}
 }

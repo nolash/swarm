@@ -105,14 +105,11 @@ type FileSplitterTwo struct {
 	writerPadSize   uint64            // cached padding size of the chained writer
 	balancedTable   map[uint64]uint64 // maps write counts to bytecounts for
 
-	levels      map[int]level
-	lastJob     *hashJobTwo // keeps pointer to the job for the first reference level
-	topHash     []byte
-	topJob      *hashJobTwo
-	lastWrite   uint64 // total number of bytes currently written
-	lastCount   uint64 // total number of sections currently written
-	targetCount uint64 // set when sum is called, is total number of bytes finally written
-	targetLevel int32  // set when sum is called, is tree level of root chunk
+	levels    map[int]level
+	lastJob   *hashJobTwo // keeps pointer to the job for the first reference level
+	topHash   []byte
+	lastWrite uint64 // total number of bytes currently written
+	lastCount uint64 // total number of sections currently written
 
 	resultC chan []byte
 
@@ -354,5 +351,9 @@ func (m *FileSplitterTwo) Sum(b []byte, length int, span []byte) []byte {
 
 // implements SectionHasherTwo
 func (m *FileSplitterTwo) Reset() {
-	log.Warn("filesplitter Reset() is unimplemented")
+	m.lastCount = 0
+	m.lastWrite = 0
+	m.topHash = make([]byte, 32)
+	m.freeJob(m.lastJob)
+	m.lastJob = m.newHashJobTwo(1, 0, 0)
 }
