@@ -2,7 +2,7 @@ package storage
 
 import (
 	"bytes"
-	"crypto/rand"
+	"math/rand"
 	"sync/atomic"
 	"testing"
 
@@ -47,8 +47,10 @@ func (t *testFileWriter) Write(index int, b []byte) {
 
 func (t *testFileWriter) Sum(b []byte, length int, span []byte) []byte {
 	h := sha3.NewLegacyKeccak256()
-	h.Write(b)
-	return h.Sum(nil)
+	h.Write(t.data)
+	s := h.Sum(nil)
+	h.Reset()
+	return s
 }
 
 func (t *testFileWriter) Reset() {
@@ -113,6 +115,7 @@ func TestFileSplitterWriteJob(t *testing.T) {
 		t.Fatalf("expected job in index to match initial job")
 	}
 	data := make([]byte, segmentSize)
+	rand.Seed(23115) // arbitrary value
 	c, err := rand.Read(data)
 	if err != nil {
 		t.Fatal(err)
@@ -120,16 +123,36 @@ func TestFileSplitterWriteJob(t *testing.T) {
 	if c != segmentSize {
 		t.Fatalf("short rand read %d", c)
 	}
-	job.write(2, data)
-	if !bytes.Equal(w.data[segmentSize*2:segmentSize*2+segmentSize], data) {
+	hasher := sha3.NewLegacyKeccak256()
+	job.write(4, data)
+	if !bytes.Equal(w.data[segmentSize*4:segmentSize*4+segmentSize], data) {
 		t.Fatalf("data mismatch in writer at pos %d", segmentSize*2)
 	}
 
+	hasher.Write(w.data)
+	ref := hasher.Sum(nil)
+	hasher.Reset()
 	fh.sum(job)
+	if !bytes.Equal(w.data[:segmentSize], ref) {
+		t.Fatalf("hash result mismatch in writer after first sum, expected %x, got %x", ref, w.data[:segmentSize])
+	}
 
 	_, ok = fh.levels[1].jobs[0]
 	if ok {
 		t.Fatalf("expected level 1 idx 0 job to be deleted")
+	}
+
+	job = fh.newHashJobTwo(1, fh.branches, fh.branches)
+	job.write(2, data)
+	if !bytes.Equal(w.data[segmentSize*2:segmentSize*2+segmentSize], data) {
+		t.Fatalf("data mismatch in writer at pos %d", segmentSize*2)
+	}
+	hasher.Write(w.data)
+	ref = hasher.Sum(nil)
+	hasher.Reset()
+	fh.sum(job)
+	if !bytes.Equal(w.data[segmentSize:segmentSize*2], ref) {
+		t.Fatalf("hash result mismatch in writer after second sum")
 	}
 
 }
