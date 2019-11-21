@@ -32,7 +32,7 @@ func NewReferenceFileHasher(hasher *bmt.Hasher, branches int) *ReferenceFileHash
 }
 
 // calculate how many levels the tree will. includes root hash as level
-func getLevelsFromLength(l int, segmentSize int, branches int) int {
+func getLevelsFromLength(l uint64, segmentSize uint64, branches uint64) int {
 	if l == 0 {
 		return 0
 	} else if l <= segmentSize*branches {
@@ -48,7 +48,7 @@ func getLevelsFromLength(l int, segmentSize int, branches int) int {
 // TODO: See if level 0 data can be written directly to hasher without complicating code
 func (f *ReferenceFileHasher) Hash(r io.Reader, l int) common.Hash {
 	f.totalBytes = l
-	levelCount := getLevelsFromLength(l, f.segmentSize, f.branches)
+	levelCount := getLevelsFromLength(uint64(l), uint64(f.segmentSize), uint64(f.branches))
 	log.Trace("level count", "l", levelCount, "b", f.branches, "c", l, "s", f.segmentSize)
 	bufLen := f.segmentSize
 	for i := 1; i < levelCount; i++ {

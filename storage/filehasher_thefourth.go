@@ -30,20 +30,20 @@ func lengthToSpan(l uint64) []byte {
 
 // index to retrieve already existing parent jobs
 type level struct {
-	height int
+	height int32
 	jobs   map[uint64]*hashJobTwo
 }
 
 // encapsulates a single chunk write
 type hashJobTwo struct {
 	parent           *hashJobTwo
-	level            int              // tree level of job
+	level            int32            // tree level of job
 	levelIndex       uint64           // chunk index in own level
 	firstDataSection uint64           // first data section index this job points to
 	dataSize         uint64           // size of data underlying span represents
 	parentSection    uint64           // section index in parent job this job will write its hash to
 	count            uint64           // number of writes currently made to this job
-	finish           bool             // set on last level 1 job when Sum() is called
+	targetLevel      int32            // target level, set when Sum() is called
 	writer           SectionHasherTwo // underlying hasher
 }
 
@@ -52,11 +52,23 @@ func (h *hashJobTwo) String() string {
 	return fmt.Sprintf("%p", h)
 }
 
+func (h *hashJobTwo) log(s string) {
+	dataSize := atomic.LoadUint64(&h.dataSize)
+	targetLevel := atomic.LoadInt32(&h.targetLevel)
+	count := atomic.LoadUint64(&h.count)
+	log.Trace(s, "level", h.level, "levelindex", h.levelIndex, "datasection", h.firstDataSection, "parentsection", h.parentSection, "count", count, "dataSize", dataSize, "targetLevel", targetLevel)
+}
+
 // writes to underlying writer
 // does not protect against double writes or writes out of index range
 func (m *FileSplitterTwo) write(job *hashJobTwo, index int, b []byte) {
+	targetLevel := atomic.LoadInt32(&job.targetLevel)
+	if targetLevel == job.level {
+		m.resultC <- b
+	}
 	job.writer.Write(index, b)
 	count := atomic.AddUint64(&job.count, 1)
+	job.log(fmt.Sprintf("job write: %d,%x", index, b))
 	// TODO: this will write on every hash write to every chunk on the 0 dataindex side, can be optimized
 	if job.firstDataSection == 0 && count == 1 {
 		m.setTopHash(b)
@@ -86,8 +98,8 @@ func (m *FileSplitterTwo) sum(job *hashJobTwo) {
 	count := atomic.LoadUint64(&job.count)
 	thisRefsSize := count * sectionSize
 
-	// execute sum
 	r := job.writer.Sum(nil, int(thisRefsSize), span)
+	job.log(fmt.Sprintf("job sum: %v, %x", span, r))
 
 	// write to parent corresponding index
 	parent := m.getOrCreateParent(job)
@@ -105,7 +117,7 @@ type FileSplitterTwo struct {
 	writerPadSize   uint64            // cached padding size of the chained writer
 	balancedTable   map[uint64]uint64 // maps write counts to bytecounts for
 
-	levels    map[int]level
+	levels    map[int32]level
 	lastJob   *hashJobTwo // keeps pointer to the job for the first reference level
 	topHash   []byte
 	lastWrite uint64 // total number of bytes currently written
@@ -132,7 +144,7 @@ func NewFileSplitterTwo(dataHasher *bmt.Hasher, writerFunc func() SectionHasherT
 	writer := writerFunc()
 	branches := writer.BatchSize() + writer.PadSize()
 	f := &FileSplitterTwo{
-		levels:          make(map[int]level),
+		levels:          make(map[int32]level),
 		branches:        branches,
 		sectionSize:     uint64(writer.SectionSize()),
 		chunkSize:       branches * uint64(writer.SectionSize()),
@@ -146,7 +158,7 @@ func NewFileSplitterTwo(dataHasher *bmt.Hasher, writerFunc func() SectionHasherT
 		resultC:         make(chan []byte),
 	}
 
-	for i := 0; i < 9; i++ {
+	for i := int32(0); i < 9; i++ {
 		f.levels[i] = level{
 			height: i,
 			jobs:   make(map[uint64]*hashJobTwo),
@@ -172,9 +184,14 @@ func NewFileSplitterTwo(dataHasher *bmt.Hasher, writerFunc func() SectionHasherT
 	return f, nil
 }
 
+func sectionCountNum(l int, sectionSize uint64) uint64 {
+	return uint64(l-1)/sectionSize + 1
+}
+
 // calculates amount of sections the given data affects
 func sectionCount(b []byte, sectionSize uint64) uint64 {
-	return uint64(len(b)-1)/sectionSize + 1
+	//return uint64(len(b)-1)/sectionSize + 1
+	return sectionCountNum(len(b), sectionSize)
 }
 
 // returns number of sections a slice of data comprises
@@ -204,17 +221,28 @@ func (m *FileSplitterTwo) freeJob(job *hashJobTwo) {
 // will be called on starts cascading
 // shortLength is the size of the last chunk on data level
 // if shortLength is zero, the full chunk length will be used
-func (m *FileSplitterTwo) finish(shortLength uint64) {
+func (m *FileSplitterTwo) finish() {
+	targetLevel := int32(getLevelsFromLength(m.lastWrite, m.sectionSize, m.branches) - 1)
 	m.writerMu.Lock()
-	defer m.writerMu.Unlock()
 	job := m.lastJob
-	job.finish = true
-	log.Debug("finish", "short", shortLength)
+	job.dataSize = m.lastWrite % (m.branches * m.chunkSize)
+	job.targetLevel = targetLevel
+	log.Debug("finish", "short", job.dataSize, "targetLevel", job.targetLevel)
+	m.writerMu.Unlock()
+
+	level := int32(1) // first level of parent
+	for level != targetLevel {
+		parent := m.getOrCreateParent(job)
+		m.writerMu.Lock()
+		parent.targetLevel = targetLevel
+		m.writerMu.Unlock()
+		level += 1
+	}
 }
 
 // creates a new hash job object
 // when generating a parent job the parentSection of the child is passed and used to calculate the consecutive parent index
-func (m *FileSplitterTwo) newHashJobTwo(level int, dataSectionIndex uint64, thisSectionIndex uint64) *hashJobTwo {
+func (m *FileSplitterTwo) newHashJobTwo(level int32, dataSectionIndex uint64, thisSectionIndex uint64) *hashJobTwo {
 	job := &hashJobTwo{
 		level:            level,
 		firstDataSection: dataSectionIndex,
@@ -313,7 +341,7 @@ func (m *FileSplitterTwo) Write(index int, b []byte) {
 	sectionWrites := ((len(b) - 1) / 32) + 1
 	m.lastCount += uint64(sectionWrites)
 	m.lastWrite += uint64(len(b))
-	log.Trace("Write()", "offset", index, "lastwrite", m.lastWrite, "lastcount", m.lastCount, "sectionsinwrite", sectionWrites, "w", fmt.Sprintf("%p", m.lastJob.writer))
+	log.Trace("Write()", "index", index, "lastwrite", m.lastWrite, "lastcount", m.lastCount, "sectionsinwrite", sectionWrites, "w", fmt.Sprintf("%p", m.lastJob.writer))
 	span := lengthToSpan(uint64(len(b)))
 	m.dataHasher.ResetWithLength(span)
 	m.dataHasher.Write(b)
@@ -322,7 +350,7 @@ func (m *FileSplitterTwo) Write(index int, b []byte) {
 	if index == 0 {
 		m.setTopHash(ref)
 	}
-	m.write(m.lastJob, index%int(m.branches), ref)
+	m.write(m.lastJob, index/int(m.branches), ref)
 	if m.lastCount%m.chunkSize == 0 {
 		go m.sum(m.lastJob)
 		m.lastJob = m.newHashJobTwo(1, m.lastCount, m.lastCount)
@@ -337,15 +365,9 @@ func (m *FileSplitterTwo) Sum(b []byte, length int, span []byte) []byte {
 		return m.topHash
 	}
 
-	shortLength := m.lastWrite % m.chunkSize
-	m.finish(shortLength)
-	m.sum(m.lastJob)
+	m.finish()
+	go m.sum(m.lastJob)
 
-	//if m.lastWrite <= uint64(m.sectionSize*m.branches) {
-	//	return m.topHash
-	//	}
-	//count := atomic.LoadInt32(&m.lastJob.count)
-	//m.sum(b, int(count-1), count-1, m.lastJob, m.lastJob.writer, m.lastJob.parent)
 	return <-m.resultC
 }
 

@@ -70,7 +70,7 @@ var (
 	}
 
 	start = 0
-	end   = 7 //len(dataLengths)
+	end   = 13 //len(dataLengths)
 )
 
 type wrappedHasher struct {

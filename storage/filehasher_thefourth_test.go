@@ -171,7 +171,7 @@ func TestFileSplitterBMT(t *testing.T) {
 		}
 		dataLength := dataLengths[i]
 		_, data := generateSerialData(dataLength, 255, 0)
-		log.Info(">>>>>>>>> NewFileHasher start", "i", i, "len", dataLength)
+		log.Info(">>>>>>>>> NewFileHasher start", "i", i, "len", dataLength, "expect", expected[i])
 		offset := 0
 		l := 4096
 		for j := 0; j < dataLength; j += 4096 {
