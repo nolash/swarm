@@ -299,7 +299,7 @@ func (m *FileSplitterTwo) newHashJobTwo(level int32, dataSectionIndex uint64, th
 // firstDataSection needs to be the leftmost chunk alignment on the level above
 func (m *FileSplitterTwo) getOrCreateParent(job *hashJobTwo) *hashJobTwo {
 
-	// first, check if parent already exists
+	// first, check if parent already exists and return if it does return it
 	// TODO: consider whether it is useful to have parent member on job since it will only be used once
 	m.writerMu.Lock()
 	parent := job.parent
@@ -309,8 +309,9 @@ func (m *FileSplitterTwo) getOrCreateParent(job *hashJobTwo) *hashJobTwo {
 		return parent
 	}
 
-	// second, check the levels index
+	// second, check the levels
 	// if parent already was created by a different job under the same span
+	// if it was return it
 	parentSection := atomic.LoadUint64(&job.parentSection)
 	levelIndex := m.getIndexFromSection(parentSection)
 	m.writerMu.Lock()
@@ -325,10 +326,15 @@ func (m *FileSplitterTwo) getOrCreateParent(job *hashJobTwo) *hashJobTwo {
 		return parent
 	}
 
-	// lastly create a new job for the parent
-	// the job constructor adds the job to the level index
+	// if no parent exists create a new job for it
+	// first calculate the data index that corresponds to the start section of this job
 	log.Trace("creating new parent")
-	parent = m.newHashJobTwo(job.level+1, job.firstDataSection, job.parentSection)
+	parentFirstDataBoundary := m.getLowerBoundaryByLevel(job.firstDataSection, job.level+1)
+
+	// the job constructor adds the job to the level index
+	parent = m.newHashJobTwo(job.level+1, parentFirstDataBoundary, job.parentSection)
+
+	// assign the parent to the child job parent member for quick access later
 	m.writerMu.Lock()
 	job.parent = parent
 	m.writerMu.Unlock()
