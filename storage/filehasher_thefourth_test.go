@@ -60,20 +60,20 @@ func (t *testFileWriter) Reset() {
 	return
 }
 
-func TestJobCountFromDataSize(t *testing.T) {
+func TestJobCountFromDataCount(t *testing.T) {
 	fh, err := newTestSplitter(newAsyncHasher)
 	if err != nil {
 		t.Fatal(err)
 	}
 	log.Info("filehasher set up", "batchsize", fh.BatchSize(), "padsize", fh.PadSize())
 
-	dataSizes := []uint64{4095, 4096, 4097, 4096*128 - 1, 4096 * 128, 4096 * 129}
+	dataSizes := []uint64{127, 128, 129, 128*128 - 1, 128 * 128, 128*128 + 1}
 	levels := []int32{1, 2}
 	expects := []uint64{1, 1, 2, 128, 128, 129, 1, 1, 1, 1, 1, 2}
 
 	for i, level := range levels {
 		for j, dataSize := range dataSizes {
-			r := fh.getJobCountFromDataSize(dataSize, level)
+			r := fh.getJobCountFromDataCount(dataSize, level)
 			expect := expects[i*len(dataSizes)+j]
 			if r != expect {
 				t.Fatalf("%d/%d expect %d, got %d", level, dataSize, expect, r)

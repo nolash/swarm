@@ -65,7 +65,9 @@ func (h *hashJobTwo) log(s string) {
 func (m *FileSplitterTwo) write(job *hashJobTwo, index int, b []byte) {
 	targetLevel := atomic.LoadInt32(&job.targetLevel)
 	if targetLevel == job.level {
+		m.freeJob(job)
 		m.resultC <- b
+		return
 	}
 	job.writer.Write(index, b)
 	count := atomic.AddUint64(&job.count, 1)
@@ -218,9 +220,9 @@ func (m *FileSplitterTwo) getIndexFromSection(sectionCount uint64) uint64 {
 }
 
 // calculates the expected write count on a given level from the provided data byte count
-func (m *FileSplitterTwo) getJobCountFromDataSize(dataSize uint64, targetLevel int32) uint64 {
-	targetSection := (dataSize-1)/m.chunkSize + 1
-	for level := int32(1); level < targetLevel; level++ {
+func (m *FileSplitterTwo) getJobCountFromDataCount(dataCount uint64, targetLevel int32) uint64 {
+	targetSection := dataCount
+	for level := int32(0); level < targetLevel; level++ {
 		targetSection = (targetSection-1)/m.branches + 1
 	}
 	return targetSection
@@ -241,20 +243,21 @@ func (m *FileSplitterTwo) finish() {
 	targetLevel := int32(getLevelsFromLength(m.lastWrite, m.sectionSize, m.branches) - 1)
 	m.writerMu.Lock()
 	job := m.lastJob
-	job.dataSize = m.lastWrite % (m.branches * m.chunkSize)
-	job.targetLevel = targetLevel
-	c := m.getJobCountFromDataSize(m.lastWrite, targetLevel)
-	job.targetCount = c % m.branches
+	atomic.StoreUint64(&job.dataSize, m.lastWrite%(m.branches*m.chunkSize))
+	atomic.StoreInt32(&job.targetLevel, targetLevel)
+	c := m.getJobCountFromDataCount(m.lastCount, targetLevel)
+	targetCount := c % m.branches
+	job.targetCount = targetCount
 	log.Debug("finish", "short", job.dataSize, "targetLevel", job.targetLevel, "targetcount", job.targetCount)
 	m.writerMu.Unlock()
 
 	level := int32(1) // first level of parent
 	for level != targetLevel {
 		parent := m.getOrCreateParent(job)
-		m.writerMu.Lock()
-		parent.targetLevel = targetLevel
-		parent.targetCount = job.targetCount
-		m.writerMu.Unlock()
+		parentTargetCount := m.getJobCountFromDataCount(targetCount, parent.level)
+		atomic.StoreInt32(&parent.targetLevel, targetLevel)
+		atomic.StoreUint64(&parent.targetCount, parentTargetCount)
+		log.Trace("finish parent", "targetLevel", targetLevel, "targetcount", parentTargetCount)
 		level += 1
 	}
 
@@ -302,10 +305,11 @@ func (m *FileSplitterTwo) getOrCreateParent(job *hashJobTwo) *hashJobTwo {
 	parentSection := atomic.LoadUint64(&job.parentSection)
 	levelIndex := m.getIndexFromSection(parentSection)
 	m.writerMu.Lock()
-	parent, ok := m.levels[job.level+1].jobs[levelIndex]
+	level := job.level
+	parent, ok := m.levels[level+1].jobs[levelIndex]
 	m.writerMu.Unlock()
 	if ok {
-		log.Trace("level index has parent", "levelindex", levelIndex)
+		log.Trace("level index has parent", "levelindex", levelIndex, "level", level)
 		m.writerMu.Lock()
 		job.parent = parent
 		m.writerMu.Unlock()
@@ -362,6 +366,9 @@ func (m *FileSplitterTwo) Write(index int, b []byte) {
 	sectionWrites := ((len(b) - 1) / 32) + 1
 	m.lastCount += uint64(sectionWrites)
 	m.lastWrite += uint64(len(b))
+	if index == 0 {
+		log.Info("FIRST WRITE")
+	}
 	log.Trace("Write()", "index", index, "lastwrite", m.lastWrite, "lastcount", m.lastCount, "sectionsinwrite", sectionWrites, "w", fmt.Sprintf("%p", m.lastJob.writer))
 
 	// synchronously hash data
@@ -385,7 +392,6 @@ func (m *FileSplitterTwo) Write(index int, b []byte) {
 	// create and attach a new job for level 1
 	// sum() will free the existing job
 	if m.lastCount%(m.chunkSize*m.branches) == 0 {
-		//go m.sum(m.lastJob)
 		m.lastJob = m.newHashJobTwo(1, m.lastCount, m.lastCount)
 	}
 }
@@ -418,5 +424,10 @@ func (m *FileSplitterTwo) Reset() {
 	m.lastWrite = 0
 	m.topHash = make([]byte, 32)
 	m.freeJob(m.lastJob)
+	for _, level := range m.levels {
+		if len(level.jobs) > 0 {
+			panic(fmt.Sprintf("level %d has %d entries", level.height, len(level.jobs)))
+		}
+	}
 	m.lastJob = m.newHashJobTwo(1, 0, 0)
 }
