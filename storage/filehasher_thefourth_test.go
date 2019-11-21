@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethersphere/swarm/bmt"
 	"github.com/ethersphere/swarm/log"
 	"golang.org/x/crypto/sha3"
@@ -205,7 +206,7 @@ func TestFileSplitterBMT(t *testing.T) {
 			offset += 4096
 		}
 		refHash := fh.Sum(nil, 0, nil)
-		t.Logf("result %d: %x", i, refHash)
+		log.Info(">>>>>>>>> Result", "i", i, "hash", hexutil.Encode(refHash))
 	}
 }
 

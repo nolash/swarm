@@ -63,6 +63,7 @@ func (h *hashJobTwo) log(s string) {
 // writes to underlying writer
 // does not protect against double writes or writes out of index range
 func (m *FileSplitterTwo) write(job *hashJobTwo, index int, b []byte) {
+	job.log(fmt.Sprintf("job write: %d,%x", index, b))
 	targetLevel := atomic.LoadInt32(&job.targetLevel)
 	if targetLevel == job.level {
 		m.freeJob(job)
@@ -71,14 +72,13 @@ func (m *FileSplitterTwo) write(job *hashJobTwo, index int, b []byte) {
 	}
 	job.writer.Write(index, b)
 	count := atomic.AddUint64(&job.count, 1)
-	job.log(fmt.Sprintf("job write: %d,%x", index, b))
 	// TODO: this will write on every hash write to every chunk on the 0 dataindex side, can be optimized
 	if job.firstDataSection == 0 && count == 1 {
 		m.setTopHash(b)
 	}
 	targetCount := atomic.LoadUint64(&job.targetCount)
 	if count == m.branches || count == targetCount {
-		log.Debug("doing job sum", "count", count, "targetcount", targetCount)
+		log.Debug("doing job sum", "dataSection", job.firstDataSection, "count", count, "targetcount", targetCount)
 		go m.sum(job)
 	}
 }
@@ -166,17 +166,12 @@ func NewFileSplitterTwo(dataHasher *bmt.Hasher, writerFunc func() SectionHasherT
 		resultC:         make(chan []byte),
 	}
 
-	for i := int32(0); i < 9; i++ {
-		f.levels[i] = level{
-			height: i,
-			jobs:   make(map[uint64]*hashJobTwo),
-		}
-	}
 	f.writerPool.New = func() interface{} {
 		return writerFunc()
 	}
 	f.getWriter = f.getWriterPool
 	f.putWriter = f.putWriterPool
+	f.Reset()
 
 	// create lookup table for data write counts that result in balanced trees
 	lastBoundary := uint64(1)
@@ -188,7 +183,7 @@ func NewFileSplitterTwo(dataHasher *bmt.Hasher, writerFunc func() SectionHasherT
 	}
 
 	// create the hasherJob object for the data level.
-	f.lastJob = f.newHashJobTwo(1, 0, 0)
+	//f.lastJob = f.newHashJobTwo(1, 0, 0)
 
 	return f, nil
 }
@@ -257,7 +252,8 @@ func (m *FileSplitterTwo) finish() {
 		parentTargetCount := m.getJobCountFromDataCount(targetCount, parent.level)
 		atomic.StoreInt32(&parent.targetLevel, targetLevel)
 		atomic.StoreUint64(&parent.targetCount, parentTargetCount)
-		log.Trace("finish parent", "targetLevel", targetLevel, "targetcount", parentTargetCount)
+		log.Trace("finish parent", "targetLevel", targetLevel, "targetcount", parentTargetCount, "level", parent.level)
+		job = parent
 		level += 1
 	}
 
@@ -331,7 +327,6 @@ func (m *FileSplitterTwo) getWriterPool() SectionHasherTwo {
 	return m.writerPool.Get().(SectionHasherTwo)
 }
 
-// see writerMode consts
 func (m *FileSplitterTwo) putWriterPool(writer SectionHasherTwo) {
 	writer.Reset()
 	m.writerPool.Put(writer)
@@ -385,15 +380,17 @@ func (m *FileSplitterTwo) Write(index int, b []byte) {
 	}
 
 	// write the hash to the first level of intermediate chunks
-	// TODO: it should be possible to put this in a goroutine as long as the original job is preserved and passed to sum/write
-	m.write(m.lastJob, index/int(m.branches), ref)
-
+	job := m.lastJob
 	// if on a chunk boundary on level 1, trigger a sum on that level
 	// create and attach a new job for level 1
 	// sum() will free the existing job
 	if m.lastCount%(m.chunkSize*m.branches) == 0 {
+		log.Trace("batch threshold")
 		m.lastJob = m.newHashJobTwo(1, m.lastCount, m.lastCount)
 	}
+	// TODO: it should be possible to put this in a goroutine as long as the original job is preserved and passed to sum/write
+	// but when putting in goroutine
+	m.write(job, (index/int(m.branches))%int(m.branches), ref)
 }
 
 // implements SectionHasherTwo
@@ -423,10 +420,16 @@ func (m *FileSplitterTwo) Reset() {
 	m.lastCount = 0
 	m.lastWrite = 0
 	m.topHash = make([]byte, 32)
-	m.freeJob(m.lastJob)
-	for _, level := range m.levels {
-		if len(level.jobs) > 0 {
-			panic(fmt.Sprintf("level %d has %d entries", level.height, len(level.jobs)))
+	if m.lastJob != nil {
+		m.freeJob(m.lastJob)
+	}
+	for i := int32(0); i < 9; i++ {
+		for _, job := range m.levels[i].jobs {
+			m.freeJob(job)
+		}
+		m.levels[i] = level{
+			height: i,
+			jobs:   make(map[uint64]*hashJobTwo),
 		}
 	}
 	m.lastJob = m.newHashJobTwo(1, 0, 0)
