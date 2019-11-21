@@ -44,6 +44,7 @@ type hashJobTwo struct {
 	parentSection    uint64           // section index in parent job this job will write its hash to
 	count            uint64           // number of writes currently made to this job
 	targetLevel      int32            // target level, set when Sum() is called
+	targetCount      uint64           // target section on this level, set when Sum() is called
 	writer           SectionHasherTwo // underlying hasher
 }
 
@@ -72,6 +73,11 @@ func (m *FileSplitterTwo) write(job *hashJobTwo, index int, b []byte) {
 	// TODO: this will write on every hash write to every chunk on the 0 dataindex side, can be optimized
 	if job.firstDataSection == 0 && count == 1 {
 		m.setTopHash(b)
+	}
+	targetCount := atomic.LoadUint64(&job.targetCount)
+	if count == m.branches || count == targetCount {
+		log.Debug("doing job sum", "count", count, "targetcount", targetCount)
+		go m.sum(job)
 	}
 }
 
@@ -103,15 +109,15 @@ func (m *FileSplitterTwo) sum(job *hashJobTwo) {
 
 	// write to parent corresponding index
 	parent := m.getOrCreateParent(job)
-	m.write(parent, int(job.parentSection), r)
+	go m.write(parent, int(job.parentSection), r)
 	m.freeJob(job)
 }
 
 // FileSplitter manages the build tree of the data
 type FileSplitterTwo struct {
-	branches        uint64 // cached branch count
-	sectionSize     uint64 // cached segment size of writer
-	chunkSize       uint64
+	branches        uint64            // cached branch count
+	sectionSize     uint64            // cached segment size of writer
+	chunkSize       uint64            // cached chunk size
 	writerBatchSize uint64            // cached chunk size of chained writer
 	parentBatchSize uint64            // cached number of writes before change parent
 	writerPadSize   uint64            // cached padding size of the chained writer
@@ -176,6 +182,7 @@ func NewFileSplitterTwo(dataHasher *bmt.Hasher, writerFunc func() SectionHasherT
 	for i := 1; i < 9; i++ {
 		lastBoundary *= uint64(f.branches)
 		f.balancedTable[lastBoundary] = lastBoundary * uint64(f.sectionSize)
+		log.Trace("balancedtable", "boundary", lastBoundary, "v", f.balancedTable[lastBoundary])
 	}
 
 	// create the hasherJob object for the data level.
@@ -210,6 +217,15 @@ func (m *FileSplitterTwo) getIndexFromSection(sectionCount uint64) uint64 {
 	return sectionCount / m.branches
 }
 
+// calculates the expected write count on a given level from the provided data byte count
+func (m *FileSplitterTwo) getJobCountFromDataSize(dataSize uint64, targetLevel int32) uint64 {
+	targetSection := (dataSize-1)/m.chunkSize + 1
+	for level := int32(1); level < targetLevel; level++ {
+		targetSection = (targetSection-1)/m.branches + 1
+	}
+	return targetSection
+}
+
 // free allocated resources to a job
 func (m *FileSplitterTwo) freeJob(job *hashJobTwo) {
 	m.writerMu.Lock()
@@ -227,7 +243,9 @@ func (m *FileSplitterTwo) finish() {
 	job := m.lastJob
 	job.dataSize = m.lastWrite % (m.branches * m.chunkSize)
 	job.targetLevel = targetLevel
-	log.Debug("finish", "short", job.dataSize, "targetLevel", job.targetLevel)
+	c := m.getJobCountFromDataSize(m.lastWrite, targetLevel)
+	job.targetCount = c % m.branches
+	log.Debug("finish", "short", job.dataSize, "targetLevel", job.targetLevel, "targetcount", job.targetCount)
 	m.writerMu.Unlock()
 
 	level := int32(1) // first level of parent
@@ -235,9 +253,11 @@ func (m *FileSplitterTwo) finish() {
 		parent := m.getOrCreateParent(job)
 		m.writerMu.Lock()
 		parent.targetLevel = targetLevel
+		parent.targetCount = job.targetCount
 		m.writerMu.Unlock()
 		level += 1
 	}
+
 }
 
 // creates a new hash job object
@@ -338,21 +358,34 @@ func (m *FileSplitterTwo) setTopHash(b []byte) {
 // implements SectionHasherTwo
 func (m *FileSplitterTwo) Write(index int, b []byte) {
 
+	// update write index and byte count for data lavel
 	sectionWrites := ((len(b) - 1) / 32) + 1
 	m.lastCount += uint64(sectionWrites)
 	m.lastWrite += uint64(len(b))
 	log.Trace("Write()", "index", index, "lastwrite", m.lastWrite, "lastcount", m.lastCount, "sectionsinwrite", sectionWrites, "w", fmt.Sprintf("%p", m.lastJob.writer))
+
+	// synchronously hash data
 	span := lengthToSpan(uint64(len(b)))
 	m.dataHasher.ResetWithLength(span)
 	m.dataHasher.Write(b)
 	ref := m.dataHasher.Sum(nil)
 	log.Trace("summed data", "h", hexutil.Encode(ref), "span", span)
+
+	// shortcut for data less than 1 chunk, in which case this value will be returned immediately on Sum()
+	// TODO: this seems to belong in m.write()
 	if index == 0 {
 		m.setTopHash(ref)
 	}
+
+	// write the hash to the first level of intermediate chunks
+	// TODO: it should be possible to put this in a goroutine as long as the original job is preserved and passed to sum/write
 	m.write(m.lastJob, index/int(m.branches), ref)
-	if m.lastCount%m.chunkSize == 0 {
-		go m.sum(m.lastJob)
+
+	// if on a chunk boundary on level 1, trigger a sum on that level
+	// create and attach a new job for level 1
+	// sum() will free the existing job
+	if m.lastCount%(m.chunkSize*m.branches) == 0 {
+		//go m.sum(m.lastJob)
 		m.lastJob = m.newHashJobTwo(1, m.lastCount, m.lastCount)
 	}
 }
@@ -360,14 +393,22 @@ func (m *FileSplitterTwo) Write(index int, b []byte) {
 // implements SectionHasherTwo
 func (m *FileSplitterTwo) Sum(b []byte, length int, span []byte) []byte {
 
-	log.Debug("Sum()", "writes", m.lastWrite)
+	log.Debug("Sum()", "writes", m.lastWrite, "count", m.lastCount)
+
+	// if less than chunkSize bytes have been written merely return the already stored hash
 	if m.lastWrite <= m.chunkSize {
 		return m.topHash
 	}
 
+	// mark the current job as the final one and sum
 	m.finish()
-	go m.sum(m.lastJob)
+	if v, ok := m.balancedTable[m.lastCount]; !ok {
+		go m.sum(m.lastJob)
+	} else {
+		log.Debug("tree is balanced", "v", v)
+	}
 
+	// wait for result from write on target level
 	return <-m.resultC
 }
 
