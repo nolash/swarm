@@ -124,7 +124,7 @@ func TestFileSplitterWriteJob(t *testing.T) {
 		t.Fatalf("short rand read %d", c)
 	}
 	hasher := sha3.NewLegacyKeccak256()
-	job.write(4, data)
+	fh.write(job, 4, data)
 	if !bytes.Equal(w.data[segmentSize*4:segmentSize*4+segmentSize], data) {
 		t.Fatalf("data mismatch in writer at pos %d", segmentSize*2)
 	}
@@ -143,7 +143,7 @@ func TestFileSplitterWriteJob(t *testing.T) {
 	}
 
 	job = fh.newHashJobTwo(1, fh.branches, fh.branches)
-	job.write(2, data)
+	fh.write(job, 2, data)
 	if !bytes.Equal(w.data[segmentSize*2:segmentSize*2+segmentSize], data) {
 		t.Fatalf("data mismatch in writer at pos %d", segmentSize*2)
 	}
@@ -155,30 +155,31 @@ func TestFileSplitterWriteJob(t *testing.T) {
 		t.Fatalf("hash result mismatch in writer after second sum")
 	}
 
-	job.write(3, data[:10])
+	fh.write(job, 3, data[:10])
 
 }
 
 func TestFileSplitterBMT(t *testing.T) {
-	fh, err := newTestSplitter(newAsyncHasher)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	i := 0
-	dataLength := dataLengths[i]
-	_, data := generateSerialData(dataLength, 255, 0)
-	log.Info(">>>>>>>>> NewFileHasher start", "i", i, "len", dataLength)
-	offset := 0
-	l := 4096
-	for j := 0; j < dataLength; j += 4096 {
-		remain := dataLength - offset
-		if remain < l {
-			l = remain
+	for i := start; i < end; i++ {
+		fh, err := newTestSplitter(newAsyncHasher)
+		if err != nil {
+			t.Fatal(err)
 		}
-		fh.Write(int(offset/32), data[offset:offset+l])
-		offset += 4096
+		dataLength := dataLengths[i]
+		_, data := generateSerialData(dataLength, 255, 0)
+		log.Info(">>>>>>>>> NewFileHasher start", "i", i, "len", dataLength)
+		offset := 0
+		l := 4096
+		for j := 0; j < dataLength; j += 4096 {
+			remain := dataLength - offset
+			if remain < l {
+				l = remain
+			}
+			fh.Write(int(offset/32), data[offset:offset+l])
+			offset += 4096
+		}
+		refHash := fh.Sum(nil, 0, nil)
+		t.Logf("result %d: %x", i, refHash)
 	}
-	refHash := fh.Sum(nil, 0, nil)
-	t.Logf("result: %x", refHash)
 }
