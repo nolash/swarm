@@ -4,8 +4,8 @@ import "testing"
 
 func TestDataSizeToSection(t *testing.T) {
 
-	sizes := []int{4095, 4096, 4097}
-	expects := []int{128, 128, 129}
+	sizes := []int{chunkSize - 1, chunkSize, chunkSize + 1}
+	expects := []int{branches, branches, branches + 1}
 
 	for j, size := range sizes {
 		r := dataSizeToSection(size, sectionSize)

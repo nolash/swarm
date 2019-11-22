@@ -25,9 +25,9 @@ func TestNewJob(t *testing.T) {
 	var params *hasherParams
 	var writer bmt.SectionWriter
 
-	params = newHasherParams(32, 128)
+	params = newHasherParams(sectionSize, branches)
 
-	job := newJob(params, tgt, writer, 1, 128)
+	job := newJob(params, tgt, writer, 1, branches)
 
 	if job.level != 1 {
 		t.Fatalf("job level expected 1, got %d", job.level)
