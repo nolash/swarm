@@ -55,9 +55,8 @@ type job struct {
 	endCount        int32 // number of writes to be written to this job (0 means write to capacity)
 	lastSectionSize int   // data size on the last data section write
 
-	writeC    chan jobUnit
-	completeC chan struct{}
-	writer    bmt.SectionWriter // underlying data processor
+	writeC chan jobUnit
+	writer bmt.SectionWriter // underlying data processor
 }
 
 func newJob(params *treeParams, tgt *target, writer bmt.SectionWriter, lvl int, dataSection int) *job {
