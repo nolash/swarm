@@ -17,20 +17,20 @@ func TestDataSizeToSection(t *testing.T) {
 
 }
 
-func TestDataSizeToLevelSectionIndex(t *testing.T) {
+func TestDataSectionToLevelSection(t *testing.T) {
 
 	params := newTreeParams(sectionSize, branches)
-	sizes := []int{chunkSize - 1, chunkSize, chunkSize + 1, chunkSize * 2, chunkSize*2 + 1, chunkSize*branches + 1}
+	sections := []int{branches - 1, branches, branches + 1, branches * 2, branches*2 + 1, branches * branches}
 	levels := []int{1, 2}
-	expects := []int{0, 0, 1, 1, 2, 128, 0, 0, 0, 0, 0, 1}
+	expects := []int{0, 1, 1, 2, 2, 128, 0, 0, 0, 0, 0, 1}
 
 	for i, lvl := range levels {
-		for j, size := range sizes {
-			r := dataSizeToLevelSectionIndex(params, lvl, size)
-			k := i*len(sizes) + j
+		for j, section := range sections {
+			r := dataSectionToLevelSection(params, lvl, section)
+			k := i*len(sections) + j
 			expect := expects[k]
 			if expect != r {
-				t.Fatalf("size %d level %d: expected %d, got %d", size, lvl, expect, r)
+				t.Fatalf("size %d level %d: expected %d, got %d", section, lvl, expect, r)
 			}
 		}
 	}

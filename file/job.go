@@ -11,13 +11,17 @@ type target struct {
 }
 
 type job struct {
-	level      int // level in tree
-	startData  int // data section index
-	startLevel int // level section index
+	level        int // level in tree
+	dataSection  int // data section index
+	levelSection int // level section index
 }
 
-func newJob(params *treeParams, tgt *target, writer bmt.SectionWriter, level int, dataSection int) *job {
-	return &job{
-		level: level,
+func newJob(params *treeParams, tgt *target, writer bmt.SectionWriter, lvl int, dataSection int) *job {
+	j := &job{
+		level:       lvl,
+		dataSection: dataSection,
 	}
+
+	j.levelSection = dataSectionToLevelSection(params, lvl, dataSection)
+	return j
 }

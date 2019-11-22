@@ -10,17 +10,17 @@ package file
 //}
 //
 
+// calculates the section index of the given byte size
 func dataSizeToSectionIndex(length int, sectionSize int) int {
 
 	return (length - 1) / sectionSize
 
 }
 
-func dataSizeToLevelSectionIndex(p *treeParams, lvl int, length int) int {
+func dataSectionToLevelSection(p *treeParams, lvl int, sections int) int {
 
 	span := p.spans[lvl]
-	sectionIndex := dataSizeToSectionIndex(length, p.section)
-	return sectionIndex / span
+	return sections / span
 
 }
 

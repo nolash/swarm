@@ -32,10 +32,18 @@ func TestNewJob(t *testing.T) {
 
 	params = newTreeParams(sectionSize, branches)
 
-	job := newJob(params, tgt, writer, 1, branches)
+	job := newJob(params, tgt, writer, 1, branches+1)
 
 	if job.level != 1 {
 		t.Fatalf("job level expected 1, got %d", job.level)
+	}
+
+	if job.dataSection != branches+1 {
+		t.Fatalf("datasectionindex: expected %d, got %d", branches+1, job.dataSection)
+	}
+
+	if job.levelSection != 1 {
+		t.Fatalf("levelsectionindex: expected %d, got %d", 1, job.levelSection)
 	}
 
 }
