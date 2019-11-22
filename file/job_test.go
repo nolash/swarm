@@ -17,16 +17,16 @@ func TestTreeParams(t *testing.T) {
 
 	params := newTreeParams(sectionSize, branches)
 
-	if params.section != 32 {
-		t.Fatalf("section: expected %d, got %d", sectionSize, params.section)
+	if params.SectionSize != 32 {
+		t.Fatalf("section: expected %d, got %d", sectionSize, params.SectionSize)
 	}
 
-	if params.branches != 128 {
-		t.Fatalf("branches: expected %d, got %d", branches, params.section)
+	if params.Branches != 128 {
+		t.Fatalf("branches: expected %d, got %d", branches, params.SectionSize)
 	}
 
-	if params.spans[2] != branches*branches {
-		t.Fatalf("span %d: expected %d, got %d", 2, branches*branches, params.spans[1])
+	if params.Spans[2] != branches*branches {
+		t.Fatalf("span %d: expected %d, got %d", 2, branches*branches, params.Spans[1])
 	}
 
 }
@@ -67,7 +67,7 @@ func TestTarget(t *testing.T) {
 	}
 }
 
-func TestJobWriteAndFinish(t *testing.T) {
+func TestJobWriteOneAndFinish(t *testing.T) {
 
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches)
@@ -89,7 +89,31 @@ func TestJobWriteAndFinish(t *testing.T) {
 	case <-tgt.Done():
 	case <-ctx.Done():
 		t.Fatalf("timeout: %v", ctx.Err())
+	}
+}
 
+func TestJobWriteFull(t *testing.T) {
+
+	tgt := newTarget()
+	params := newTreeParams(sectionSize, branches)
+	writer := newDummySectionWriter(chunkSize*2, sectionSize)
+
+	job := newJob(params, tgt, writer, 1, branches)
+
+	_, data := testutil.SerialData(chunkSize, 255, 0)
+	for i := 0; i < sectionSize; i++ {
+		job.write(i, data[i*sectionSize:i*sectionSize+sectionSize])
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	select {
+	case <-tgt.Done():
+	case <-ctx.Done():
+		t.Fatalf("timeout: %v", ctx.Err())
+	}
+	if job.count() != 32 {
+		t.Fatalf("jobcount: expected %d, got %d", 32, job.count())
 	}
 }
 

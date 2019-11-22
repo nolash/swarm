@@ -19,7 +19,7 @@ func dataSizeToSectionIndex(length int, sectionSize int) int {
 
 func dataSectionToLevelSection(p *treeParams, lvl int, sections int) int {
 
-	span := p.spans[lvl]
+	span := p.Spans[lvl]
 	return sections / span
 
 }

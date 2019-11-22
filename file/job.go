@@ -44,10 +44,11 @@ type jobUnit struct {
 
 type job struct {
 	target        *target
-	level         int // level in tree
-	dataSection   int // data section index
-	levelSection  int // level section index
-	cursorSection int32
+	level         int   // level in tree
+	dataSection   int   // data section index
+	levelSection  int   // level section index
+	cursorSection int32 // next write position in job
+	params        *treeParams
 	writeC        chan jobUnit
 	completeC     chan struct{}
 	writer        bmt.SectionWriter // underlying data processor
@@ -55,6 +56,7 @@ type job struct {
 
 func newJob(params *treeParams, tgt *target, writer bmt.SectionWriter, lvl int, dataSection int) *job {
 	jb := &job{
+		params:      params,
 		level:       lvl,
 		dataSection: dataSection,
 		writer:      writer,
@@ -91,7 +93,7 @@ OUTER:
 			targetCount := jb.target.Count()
 			log.Trace("write", "newcount", newCount, "targetcount", targetCount)
 			jb.writer.Write(entry.index, entry.data)
-			if newCount == targetCount {
+			if newCount == jb.params.SectionSize || newCount == targetCount {
 				break OUTER
 			}
 		case <-jb.target.doneC:
