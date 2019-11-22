@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethersphere/swarm/testutil"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -30,7 +31,7 @@ func TestTreeParams(t *testing.T) {
 
 func TestNewJob(t *testing.T) {
 
-	var tgt *target
+	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches)
 	writer := newDummySectionWriter(chunkSize*2, sectionSize)
 
@@ -50,21 +51,26 @@ func TestNewJob(t *testing.T) {
 
 }
 
-func TestJobWrite(t *testing.T) {
+func TestJobWriteAndFinish(t *testing.T) {
 
-	var tgt target
+	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches)
 	writer := newDummySectionWriter(chunkSize*2, sectionSize)
 
-	job := newJob(params, &tgt, writer, 1, branches)
-
-	data := make([]byte, sectionSize)
+	job := newJob(params, tgt, writer, 1, branches)
+	_, data := testutil.SerialData(32, 255, 0)
 	job.write(1, data)
 
-	if job.count != 1 {
-		t.Fatalf("jobcount: expected %d, got %d", 1, job.count)
+	if job.count() != 1 {
+		t.Fatalf("jobcount: expected %d, got %d", 1, job.count())
 	}
 
+	tgt.size = 32
+	tgt.sections = 1
+	tgt.level = 1
+	tgt.Finish()
+
+	t.Logf("%x", tgt.Result())
 }
 
 type dummySectionWriter struct {

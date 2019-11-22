@@ -1,6 +1,9 @@
 package file
 
-import "github.com/ethersphere/swarm/bmt"
+import (
+	"github.com/ethersphere/swarm/bmt"
+	"github.com/ethersphere/swarm/testutil"
+)
 
 const (
 	sectionSize = 32
@@ -58,3 +61,7 @@ var (
 	start = 0
 	end   = len(dataLengths)
 )
+
+func init() {
+	testutil.Init()
+}
