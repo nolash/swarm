@@ -31,7 +31,6 @@ func TestTreeParams(t *testing.T) {
 func TestNewJob(t *testing.T) {
 
 	var tgt *target
-
 	params := newTreeParams(sectionSize, branches)
 	writer := newDummySectionWriter(chunkSize*2, sectionSize)
 
@@ -47,6 +46,23 @@ func TestNewJob(t *testing.T) {
 
 	if job.levelSection != 1 {
 		t.Fatalf("levelsectionindex: expected %d, got %d", 1, job.levelSection)
+	}
+
+}
+
+func TestJobWrite(t *testing.T) {
+
+	var tgt target
+	params := newTreeParams(sectionSize, branches)
+	writer := newDummySectionWriter(chunkSize*2, sectionSize)
+
+	job := newJob(params, &tgt, writer, 1, branches)
+
+	data := make([]byte, sectionSize)
+	job.write(1, data)
+
+	if job.count != 1 {
+		t.Fatalf("jobcount: expected %d, got %d", 1, job.count)
 	}
 
 }
