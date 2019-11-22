@@ -31,6 +31,20 @@ func TestTreeParams(t *testing.T) {
 
 }
 
+func TestTarget(t *testing.T) {
+	tgt := newTarget()
+	tgt.Set(32, 1, 2)
+	if tgt.size != 32 {
+		t.Fatalf("target size expected %d, got %d", 32, tgt.size)
+	}
+	if tgt.sections != 1 {
+		t.Fatalf("target sections expected %d, got %d", 1, tgt.sections)
+	}
+	if tgt.level != 2 {
+		t.Fatalf("target level expected %d, got %d", 2, tgt.level)
+	}
+}
+
 func TestNewJob(t *testing.T) {
 
 	tgt := newTarget()
@@ -53,18 +67,46 @@ func TestNewJob(t *testing.T) {
 
 }
 
-func TestTarget(t *testing.T) {
+func TestJobTarget(t *testing.T) {
 	tgt := newTarget()
-	tgt.Set(32, 1, 2)
-	if tgt.size != 32 {
-		t.Fatalf("target size expected %d, got %d", 32, tgt.size)
+	params := newTreeParams(sectionSize, branches)
+	writer := newDummySectionWriter(chunkSize*2, sectionSize)
+
+	job := newJob(params, tgt, writer, 1, branches*branches) // second level index, equals 128 data chunk writes
+
+	// anything less than chunksize * 128 will not be in the job span
+	finalSize := chunkSize + sectionSize + 1
+	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
+	_, ok := job.targetWithinJob(finalSection)
+	if ok {
+		t.Fatalf("targetwithinjob: expected false")
 	}
-	if tgt.sections != 1 {
-		t.Fatalf("target sections expected %d, got %d", 1, tgt.sections)
+
+	// anything between chunksize*128 and chunksize*128*2 will be within the job span
+	finalSize = chunkSize*branches + chunkSize*2
+	finalSection = dataSizeToSectionIndex(finalSize, sectionSize)
+	c, ok := job.targetWithinJob(finalSection)
+	if !ok {
+		t.Fatalf("targetwithinjob: expected true")
 	}
-	if tgt.level != 2 {
-		t.Fatalf("target level expected %d, got %d", 2, tgt.level)
+	if c != 1 {
+		t.Fatalf("targetwithinjob: expected %d, got %d", 1, c)
 	}
+
+	_, data := testutil.SerialData(sectionSize*2-1, 255, 0)
+	job.write(0, data[:sectionSize])
+	job.write(1, data[sectionSize:])
+
+	tgt.Set(finalSize, finalSection, 2)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
+	defer cancel()
+	select {
+	case <-tgt.Done():
+	case <-ctx.Done():
+		t.Fatalf("timeout: %v", ctx.Err())
+	}
+
 }
 
 func TestJobWriteOneAndFinish(t *testing.T) {
@@ -101,7 +143,7 @@ func TestJobWriteFull(t *testing.T) {
 	job := newJob(params, tgt, writer, 1, branches)
 
 	_, data := testutil.SerialData(chunkSize, 255, 0)
-	for i := 0; i < sectionSize; i++ {
+	for i := 0; i < branches; i++ {
 		job.write(i, data[i*sectionSize:i*sectionSize+sectionSize])
 	}
 
@@ -112,7 +154,7 @@ func TestJobWriteFull(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("timeout: %v", ctx.Err())
 	}
-	if job.count() != 32 {
+	if job.count() != branches {
 		t.Fatalf("jobcount: expected %d, got %d", 32, job.count())
 	}
 }

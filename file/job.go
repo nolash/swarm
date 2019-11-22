@@ -42,16 +42,20 @@ type jobUnit struct {
 	data  []byte
 }
 
+// encapsulates one single chunk to be hashed
 type job struct {
-	target        *target
+	target *target
+	params *treeParams
+
 	level         int   // level in tree
 	dataSection   int   // data section index
 	levelSection  int   // level section index
 	cursorSection int32 // next write position in job
-	params        *treeParams
-	writeC        chan jobUnit
-	completeC     chan struct{}
-	writer        bmt.SectionWriter // underlying data processor
+	//endCount      int32 // number of writes before terminate (if 0 will write to full capacity of job)
+
+	writeC    chan jobUnit
+	completeC chan struct{}
+	writer    bmt.SectionWriter // underlying data processor
 }
 
 func newJob(params *treeParams, tgt *target, writer bmt.SectionWriter, lvl int, dataSection int) *job {
@@ -77,6 +81,8 @@ func (jb *job) count() int {
 	return int(atomic.LoadInt32(&jb.cursorSection))
 }
 
+// add data to job
+// does no checking for data length or index validity
 func (jb *job) write(index int, data []byte) {
 	jb.writeC <- jobUnit{
 		index: index,
@@ -84,25 +90,63 @@ func (jb *job) write(index int, data []byte) {
 	}
 }
 
+// determine whether the given data section count falls within the span of the current job
+func (jb *job) targetWithinJob(targetCount int) (int, bool) {
+	var endCount int
+	var ok bool
+
+	// span one level above equals the data size of 128 units of one section on this level
+	// using the span table saves one multiplication
+	upperLimit := jb.dataSection + jb.params.Spans[jb.level+1]
+
+	// the data section is the data section index where the span of this job starts
+	if targetCount >= jb.dataSection && targetCount < upperLimit {
+
+		// data section index must be divided by corresponding section size on the job's level
+		// then wrap on branch period to find the correct section within this job
+		endCount = (targetCount / jb.params.Spans[jb.level]) % jb.params.Branches
+
+		ok = true
+	}
+	return int(endCount), ok
+}
+
+// runs in loop until:
+// - sectionSize number of job writes have occurred (one full chunk)
+// - data write is finalized and targetcount for this chunk was already reached
+// - data write is finalized and targetcount is reached on a subsequent job write
 func (jb *job) process() {
+
+	// is set when data write is finished, AND
+	// the final data section falls within the span of this job
+	// if not, loop will only exit on Branches writes
+	endCount := 0
 OUTER:
 	for {
 		select {
 		case entry := <-jb.writeC:
 			newCount := jb.inc()
-			targetCount := jb.target.Count()
-			log.Trace("write", "newcount", newCount, "targetcount", targetCount)
+			log.Trace("write", "newcount", newCount, "endcount", endCount)
 			jb.writer.Write(entry.index, entry.data)
-			if newCount == jb.params.SectionSize || newCount == targetCount {
+			if newCount == jb.params.Branches || newCount == endCount {
 				break OUTER
 			}
 		case <-jb.target.doneC:
 			count := jb.count()
-			targetCount := jb.target.Count()
-			log.Trace("complete", "count", count, "targetcount", targetCount)
-			if count == targetCount {
+			if count == int(endCount) {
 				break OUTER
 			}
+			if endCount > 0 {
+				continue
+			}
+
+			targetCount := jb.target.Count()
+
+			// if the target count falls within the span of this job
+			// set the endcount so we know we have to do extra calculations for
+			// determining span in case of unbalanced tree
+			endIndex, _ := jb.targetWithinJob(targetCount)
+			endCount = endIndex + 1
 		}
 	}
 	ref := jb.writer.Sum(nil, 0, nil)
