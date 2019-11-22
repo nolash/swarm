@@ -10,9 +10,12 @@ package file
 //}
 //
 
-func dataSizeToSectionCount(length int, sectionSize int) int {
+func dataSizeToSection(length int, sectionSize int) int {
 	return (length-1)/sectionSize + 1
 }
+
+//func dataSizeToLevelSection(length int, lvl int, sectionSize int, branches int) int {
+//}
 
 //// calculates amount of sections the given data affects
 //func sectionCount(b []byte, sectionSize uint64) uint64 {

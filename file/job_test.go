@@ -6,6 +6,19 @@ import (
 	"github.com/ethersphere/swarm/bmt"
 )
 
+func TestHasherParams(t *testing.T) {
+	params := newHasherParams(sectionSize, branches)
+	if params.section != 32 {
+		t.Fatalf("section: expected %d, got %d", sectionSize, params.section)
+	}
+	if params.branches != 128 {
+		t.Fatalf("branches: expected %d, got %d", branches, params.section)
+	}
+	if params.spans[2] != branches*branches {
+		t.Fatalf("span %d: expected %d, got %d", 2, branches*branches, params.spans[1])
+	}
+}
+
 func TestNewJob(t *testing.T) {
 
 	var tgt *target
