@@ -106,7 +106,8 @@ func (m *FileSplitterTwo) sum(job *hashJobTwo) {
 	if dataSize == 0 {
 		dataSize = count * m.spanTable[lvl] * m.sectionSize
 	} else {
-		dataSize += (count - 1) * m.spanTable[lvl] * m.sectionSize
+		spanBytes := m.spanTable[lvl] * m.sectionSize
+		dataSize = dataSize - spanBytes + (count-1)*spanBytes
 	}
 
 	// span is the serialized size data embedded in the chunk
@@ -202,6 +203,7 @@ func NewFileSplitterTwo(dataHasher *bmt.Hasher, writerFunc func() SectionHasherT
 	span := uint64(1)
 	for i := 0; i < 9; i++ {
 		f.spanTable = append(f.spanTable, span)
+		log.Trace("spantable", "level", i, "v", span)
 		span *= f.branches
 	}
 
