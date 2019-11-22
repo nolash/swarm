@@ -1,14 +1,18 @@
 package file
 
+import (
+	"encoding/binary"
+	"math"
+)
+
 // creates a binary span size representation
 // to pass to bmt.SectionWriter
 // TODO: move to bmt.SectionWriter, which is the object actually using this
-//func lengthToSpan(length int) []byte {
-//	spanBytes := make([]byte, 8)
-//	binary.LittleEndian.PutUint64(spanBytes, length)
-//	return spanBytes
-//}
-//
+func lengthToSpan(length int) []byte {
+	spanBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(spanBytes, uint64(length))
+	return spanBytes
+}
 
 // calculates the section index of the given byte size
 func dataSizeToSectionIndex(length int, sectionSize int) int {
@@ -22,6 +26,18 @@ func dataSectionToLevelSection(p *treeParams, lvl int, sections int) int {
 	span := p.Spans[lvl]
 	return sections / span
 
+}
+
+// calculate how many levels the tree will. includes root hash as level
+func getLevelsFromLength(l uint64, sectionSize uint64, branches uint64) int {
+	if l == 0 {
+		return 0
+	} else if l <= sectionSize*branches {
+		return 2
+	}
+	c := (l - 1) / (sectionSize)
+
+	return int(math.Log(float64(c))/math.Log(float64(branches)) + 2)
 }
 
 //// calculates amount of sections the given data affects

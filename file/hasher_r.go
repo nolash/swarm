@@ -3,7 +3,6 @@ package file
 import (
 	"encoding/binary"
 	"io"
-	"math"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethersphere/swarm/bmt"
@@ -29,18 +28,6 @@ func NewReferenceFileHasher(hasher *bmt.Hasher, branches int) *ReferenceFileHash
 		segmentSize: hasher.Size(),
 		chunkSize:   branches * hasher.Size(),
 	}
-}
-
-// calculate how many levels the tree will. includes root hash as level
-func getLevelsFromLength(l uint64, segmentSize uint64, branches uint64) int {
-	if l == 0 {
-		return 0
-	} else if l <= segmentSize*branches {
-		return 2
-	}
-	c := (l - 1) / (segmentSize)
-
-	return int(math.Log(float64(c))/math.Log(float64(branches)) + 2)
 }
 
 // reads segmentwise from input data and writes

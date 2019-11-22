@@ -47,11 +47,12 @@ type job struct {
 	target *target
 	params *treeParams
 
-	level         int   // level in tree
-	dataSection   int   // data section index
-	levelSection  int   // level section index
-	cursorSection int32 // next write position in job
-	//endCount      int32 // number of writes before terminate (if 0 will write to full capacity of job)
+	level           int   // level in tree
+	dataSection     int   // data section index
+	levelSection    int   // level section index
+	cursorSection   int32 // next write position in job
+	endCount        int32 // number of writes to be written to this job (0 means write to capacity)
+	lastSectionSize int   // data size on the last data section write
 
 	writeC    chan jobUnit
 	completeC chan struct{}
@@ -79,6 +80,15 @@ func (jb *job) inc() int {
 
 func (jb *job) count() int {
 	return int(atomic.LoadInt32(&jb.cursorSection))
+}
+
+func (jb *job) size() int {
+	count := jb.count()
+	endCount := int(atomic.LoadInt32(&jb.endCount))
+	if endCount == 0 {
+		return count * jb.params.SectionSize * jb.params.Spans[jb.level]
+	}
+	return 0
 }
 
 // add data to job
@@ -126,8 +136,8 @@ OUTER:
 		select {
 		case entry := <-jb.writeC:
 			newCount := jb.inc()
-			log.Trace("write", "newcount", newCount, "endcount", endCount)
 			jb.writer.Write(entry.index, entry.data)
+			log.Trace("job write", "count", newCount)
 			if newCount == jb.params.Branches || newCount == endCount {
 				break OUTER
 			}
@@ -147,8 +157,12 @@ OUTER:
 			// determining span in case of unbalanced tree
 			endIndex, _ := jb.targetWithinJob(targetCount)
 			endCount = endIndex + 1
+			atomic.StoreInt32(&jb.endCount, int32(endCount))
 		}
 	}
+
+	count := jb.count()
+	log.Trace("job finish writes", "count", count, "endcount", endCount)
 	ref := jb.writer.Sum(nil, 0, nil)
 	jb.target.resultC <- ref
 }

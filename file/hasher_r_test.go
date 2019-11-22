@@ -15,7 +15,7 @@ import (
 
 func TestReferenceFileHasher(t *testing.T) {
 	t.Skip("TDD in progress and this test is too slow")
-	pool = bmt.NewTreePool(sha3.NewLegacyKeccak256, 128, bmt.PoolSize)
+	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, 128, bmt.PoolSize)
 	h := bmt.New(pool)
 	var mismatch int
 	for i := start; i < end; i++ {
@@ -49,6 +49,7 @@ func benchmarkReferenceFileHasher(b *testing.B) {
 		b.Fatal(err)
 	}
 	_, data := testutil.SerialData(int(dataLength), 255, 0)
+	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, 128, bmt.PoolSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		h := bmt.New(pool)

@@ -1,7 +1,6 @@
 package file
 
 import (
-	"github.com/ethersphere/swarm/bmt"
 	"github.com/ethersphere/swarm/testutil"
 )
 
@@ -12,8 +11,6 @@ const (
 )
 
 var (
-	pool *bmt.TreePool
-
 	dataLengths = []int{31, // 0
 		32,                     // 1
 		33,                     // 2
