@@ -1,6 +1,9 @@
 package file
 
 import (
+	"crypto/sha1"
+	"hash"
+	"math/rand"
 	"testing"
 
 	"github.com/ethersphere/swarm/bmt"
@@ -46,4 +49,44 @@ func TestNewJob(t *testing.T) {
 		t.Fatalf("levelsectionindex: expected %d, got %d", 1, job.levelSection)
 	}
 
+}
+
+type dummySectionWriter struct {
+	data        []byte
+	sectionSize int
+	writer      hash.Hash
+}
+
+func newDummySectionWriter(cp int, sectionSize int) *dummySectionWriter {
+	return &dummySectionWriter{
+		data:        make([]byte, cp),
+		sectionSize: sectionSize,
+		writer:      sha1.New(),
+	}
+}
+
+func (d *dummySectionWriter) Write(index int, data []byte) {
+	copy(d.data[index*sectionSize:], data)
+}
+
+func (d *dummySectionWriter) Reset() {
+	d.data = make([]byte, len(d.data))
+}
+
+func TestDummySectionWriter(t *testing.T) {
+
+	w := newDummySectionWriter(chunkSize*2, sectionSize)
+	w.Reset()
+
+	data := make([]byte, 32)
+	rand.Seed(23115)
+	c, err := rand.Read(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c < 32 {
+		t.Fatalf("short read %d", c)
+	}
+
+	w.Write(branches, data)
 }
