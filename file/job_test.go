@@ -2,9 +2,11 @@ package file
 
 import (
 	"bytes"
+	"context"
 	"hash"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethersphere/swarm/testutil"
@@ -51,6 +53,20 @@ func TestNewJob(t *testing.T) {
 
 }
 
+func TestTarget(t *testing.T) {
+	tgt := newTarget()
+	tgt.Set(32, 1, 2)
+	if tgt.size != 32 {
+		t.Fatalf("target size expected %d, got %d", 32, tgt.size)
+	}
+	if tgt.sections != 1 {
+		t.Fatalf("target sections expected %d, got %d", 1, tgt.sections)
+	}
+	if tgt.level != 2 {
+		t.Fatalf("target level expected %d, got %d", 2, tgt.level)
+	}
+}
+
 func TestJobWriteAndFinish(t *testing.T) {
 
 	tgt := newTarget()
@@ -65,12 +81,16 @@ func TestJobWriteAndFinish(t *testing.T) {
 		t.Fatalf("jobcount: expected %d, got %d", 1, job.count())
 	}
 
-	tgt.size = 32
-	tgt.sections = 1
-	tgt.level = 1
-	tgt.Finish()
+	tgt.Set(32, 1, 1)
 
-	t.Logf("%x", tgt.Result())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	select {
+	case <-tgt.Done():
+	case <-ctx.Done():
+		t.Fatalf("timeout: %v", ctx.Err())
+
+	}
 }
 
 type dummySectionWriter struct {

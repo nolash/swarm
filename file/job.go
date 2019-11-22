@@ -8,9 +8,9 @@ import (
 )
 
 type target struct {
-	size     int   // bytes written
+	size     int32 // bytes written
 	sections int32 // sections written
-	level    int   // target level calculated from bytes written against branching factor and sector size
+	level    int32 // target level calculated from bytes written against branching factor and sector size
 	resultC  chan []byte
 	doneC    chan struct{}
 }
@@ -22,7 +22,10 @@ func newTarget() *target {
 	}
 }
 
-func (t *target) Finish() {
+func (t *target) Set(size int, sections int, level int) {
+	atomic.StoreInt32(&t.size, int32(size))
+	atomic.StoreInt32(&t.sections, int32(sections))
+	atomic.StoreInt32(&t.level, int32(level))
 	close(t.doneC)
 }
 
@@ -30,8 +33,8 @@ func (t *target) Count() int {
 	return int(atomic.LoadInt32(&t.sections))
 }
 
-func (t *target) Result() []byte {
-	return <-t.resultC
+func (t *target) Done() <-chan []byte {
+	return t.resultC
 }
 
 type jobUnit struct {
