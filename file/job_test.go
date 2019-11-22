@@ -238,9 +238,53 @@ func TestJobWriteSpan(t *testing.T) {
 		jb.write(i/sectionSize, data[i:i+sectionSize])
 	}
 
-	sz := jb.size()
-	if sz != chunkSize*branches {
-		t.Fatalf("job size: expected %d, got %d", chunkSize+sectionSize, sz)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	select {
+	case ref := <-tgt.Done():
+		t.Logf("%x", ref)
+	case <-ctx.Done():
+		t.Fatalf("timeout: %v", ctx.Err())
 	}
 
+	sz := jb.size()
+	if sz != chunkSize*branches {
+		t.Fatalf("job size: expected %d, got %d", chunkSize*branches, sz)
+	}
+}
+
+func TestJobWriteSpanShuffle(t *testing.T) {
+
+	tgt := newTarget()
+	params := newTreeParams(sectionSize, branches)
+	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
+	writer := bmt.New(pool).NewAsyncWriter(false)
+
+	jb := newJob(params, tgt, writer, 1, branches)
+	_, data := testutil.SerialData(chunkSize, 255, 0)
+
+	var idxs []int
+	for i := 0; i < branches; i++ {
+		idxs = append(idxs, i)
+	}
+	rand.Shuffle(branches, func(i int, j int) {
+		idxs[i], idxs[j] = idxs[j], idxs[i]
+	})
+	for _, idx := range idxs {
+		jb.write(idx, data[idx*sectionSize:idx*sectionSize+sectionSize])
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*1000)
+	defer cancel()
+	select {
+	case ref := <-tgt.Done():
+		t.Logf("%x", ref)
+	case <-ctx.Done():
+		t.Fatalf("timeout: %v", ctx.Err())
+	}
+
+	sz := jb.size()
+	if sz != chunkSize*branches {
+		t.Fatalf("job size: expected %d, got %d", chunkSize*branches, sz)
+	}
 }

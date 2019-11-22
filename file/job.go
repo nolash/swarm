@@ -3,6 +3,7 @@ package file
 import (
 	"sync/atomic"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethersphere/swarm/bmt"
 	"github.com/ethersphere/swarm/log"
 )
@@ -137,7 +138,7 @@ OUTER:
 		case entry := <-jb.writeC:
 			newCount := jb.inc()
 			jb.writer.Write(entry.index, entry.data)
-			log.Trace("job write", "count", newCount)
+			log.Trace("job write", "count", newCount, "index", entry.index, "data", hexutil.Encode(entry.data))
 			if newCount == jb.params.Branches || newCount == endCount {
 				break OUTER
 			}
@@ -161,8 +162,9 @@ OUTER:
 		}
 	}
 
-	count := jb.count()
-	log.Trace("job finish writes", "count", count, "endcount", endCount)
-	ref := jb.writer.Sum(nil, 0, nil)
+	size := jb.size()
+	span := lengthToSpan(size)
+	log.Trace("job sum", "size", size, "span", span)
+	ref := jb.writer.Sum(nil, size, span)
 	jb.target.resultC <- ref
 }
