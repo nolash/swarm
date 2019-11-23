@@ -1,6 +1,7 @@
 package file
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -26,6 +27,7 @@ func newJobIndex(maxLevels int) *jobIndex {
 }
 
 func (ji *jobIndex) Add(jb *job) {
+	log.Trace("adding job", "job", jb)
 	ji.jobs[jb.level].Store(jb.dataSection, jb)
 }
 
@@ -76,6 +78,7 @@ type jobUnit struct {
 type job struct {
 	target      *target
 	params      *treeParams
+	index       *jobIndex
 	registerJob func(int, int) *job
 
 	level           int   // level in tree
@@ -89,19 +92,28 @@ type job struct {
 	writer bmt.SectionWriter // underlying data processor
 }
 
-func newJob(params *treeParams, tgt *target, writer bmt.SectionWriter, lvl int, dataSection int) *job {
+func newJob(params *treeParams, tgt *target, jobIndex *jobIndex, writer bmt.SectionWriter, lvl int, dataSection int) *job {
 	jb := &job{
 		params:      params,
+		index:       jobIndex,
 		level:       lvl,
 		dataSection: dataSection,
 		writer:      writer,
 		writeC:      make(chan jobUnit),
 		target:      tgt,
 	}
+	if jb.index == nil {
+		jb.index = newJobIndex(9)
+	}
 
 	jb.levelSection = dataSectionToLevelSection(params, lvl, dataSection)
+	jb.index.Add(jb)
 	go jb.process()
 	return jb
+}
+
+func (jb *job) String() string {
+	return fmt.Sprintf("job: l:%d,s:%d,c:%d", jb.level, jb.dataSection, jb.count())
 }
 
 func (jb *job) inc() int {
@@ -123,8 +135,6 @@ func (jb *job) size() int {
 		return count * jb.params.SectionSize * jb.params.Spans[jb.level]
 	}
 	log.Trace("size", "sections", jb.target.sections)
-	//size := (int(jb.target.sections) - jb.dataSection - 1) % jb.params.Spans[jb.level]
-	//size += int(jb.target.size) % jb.params.SectionSize
 	return int(jb.target.size) % (jb.params.Spans[jb.level] * jb.params.SectionSize * jb.params.Branches)
 }
 
@@ -210,5 +220,5 @@ func (jb *job) targetCountToEndCount(targetCount int) int {
 }
 
 func (jb *job) parent() *job {
-	return newJob(jb.params, jb.target, nil, jb.level+1, jb.dataSection)
+	return newJob(jb.params, jb.target, jb.index, nil, jb.level+1, jb.dataSection)
 }

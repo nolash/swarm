@@ -116,7 +116,7 @@ func TestNewJob(t *testing.T) {
 	params := newTreeParams(sectionSize, branches)
 	writer := newDummySectionWriter(chunkSize*2, sectionSize)
 
-	jb := newJob(params, tgt, writer, 1, branches+1)
+	jb := newJob(params, tgt, nil, writer, 1, branches+1)
 
 	if jb.level != 1 {
 		t.Fatalf("job level expected 1, got %d", jb.level)
@@ -138,7 +138,7 @@ func TestJobTarget(t *testing.T) {
 	params := newTreeParams(sectionSize, branches)
 	writer := newDummySectionWriter(chunkSize*2, sectionSize)
 
-	jb := newJob(params, tgt, writer, 1, branches*branches) // second level index, equals 128 data chunk writes
+	jb := newJob(params, tgt, nil, writer, 1, branches*branches) // second level index, equals 128 data chunk writes
 
 	// anything less than chunksize * 128 will not be in the job span
 	finalSize := chunkSize + sectionSize + 1
@@ -180,7 +180,7 @@ func TestJobFinalSize(t *testing.T) {
 	params := newTreeParams(sectionSize, branches)
 	writer := newDummySectionWriter(chunkSize*2, sectionSize)
 
-	jb := newJob(params, tgt, writer, 2, branches)
+	jb := newJob(params, tgt, nil, writer, 2, branches)
 
 	finalSize := chunkSize*branches + chunkSize*sectionSize
 	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
@@ -206,7 +206,7 @@ func TestJobWriteOneAndFinish(t *testing.T) {
 	params := newTreeParams(sectionSize, branches)
 	writer := newDummySectionWriter(chunkSize*2, sectionSize)
 
-	jb := newJob(params, tgt, writer, 1, branches)
+	jb := newJob(params, tgt, nil, writer, 1, branches)
 	_, data := testutil.SerialData(32, 255, 0)
 	jb.write(1, data)
 
@@ -231,7 +231,7 @@ func TestJobWriteFull(t *testing.T) {
 	params := newTreeParams(sectionSize, branches)
 	writer := newDummySectionWriter(chunkSize*2, sectionSize)
 
-	jb := newJob(params, tgt, writer, 1, branches)
+	jb := newJob(params, tgt, nil, writer, 1, branches)
 
 	_, data := testutil.SerialData(chunkSize, 255, 0)
 	for i := 0; i < branches; i++ {
@@ -257,7 +257,7 @@ func TestJobWriteSpan(t *testing.T) {
 	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
 	writer := bmt.New(pool).NewAsyncWriter(false)
 
-	jb := newJob(params, tgt, writer, 1, branches)
+	jb := newJob(params, tgt, nil, writer, 1, branches)
 	_, data := testutil.SerialData(chunkSize, 255, 0)
 
 	for i := 0; i < len(data); i += sectionSize {
@@ -290,7 +290,7 @@ func TestJobWriteSpanShuffle(t *testing.T) {
 	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
 	writer := bmt.New(pool).NewAsyncWriter(false)
 
-	jb := newJob(params, tgt, writer, 1, branches)
+	jb := newJob(params, tgt, nil, writer, 1, branches)
 	_, data := testutil.SerialData(chunkSize, 255, 0)
 
 	var idxs []int
@@ -323,22 +323,6 @@ func TestJobWriteSpanShuffle(t *testing.T) {
 	}
 }
 
-func TestGetJobParent(t *testing.T) {
-	tgt := newTarget()
-	params := newTreeParams(sectionSize, branches)
-	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
-	writer := bmt.New(pool).NewAsyncWriter(false)
-
-	jb := newJob(params, tgt, writer, 1, branches)
-	jbp := jb.parent()
-	if jbp == nil {
-		t.Fatalf("parent: nil")
-	}
-	if jbp.level != 2 {
-		t.Fatalf("parent level: expected %d, got %d", 2, jbp.level)
-	}
-}
-
 func TestJobIndex(t *testing.T) {
 	jobIndex := newJobIndex(9)
 	tgt := newTarget()
@@ -346,11 +330,37 @@ func TestJobIndex(t *testing.T) {
 	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
 	writer := bmt.New(pool).NewAsyncWriter(false)
 
-	jb := newJob(params, tgt, writer, 1, branches)
+	jb := newJob(params, tgt, jobIndex, writer, 1, branches)
 	jobIndex.Add(jb)
 	jbGot := jobIndex.Get(1, branches)
 	if jb != jbGot {
 		t.Fatalf("jbIndex get: expect %p, got %p", jb, jbGot)
 	}
 
+}
+
+func TestGetJobParent(t *testing.T) {
+	tgt := newTarget()
+	params := newTreeParams(sectionSize, branches)
+	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
+	writer := bmt.New(pool).NewAsyncWriter(false)
+
+	jb := newJob(params, tgt, nil, writer, 1, branches)
+	jbp := jb.parent()
+	if jbp == nil {
+		t.Fatalf("parent: nil")
+	}
+	if jbp.level != 2 {
+		t.Fatalf("parent level: expected %d, got %d", 2, jbp.level)
+	}
+	if jbp.dataSection != 128 {
+		t.Fatalf("parent data section: expected %d, got %d", 128, jbp.dataSection)
+	}
+	jbGot := jb.index.Get(2, 128)
+	if jbGot == nil {
+		t.Fatalf("index get: nil")
+	}
+	if jbGot.levelSection != 0 {
+		t.Fatalf("levelsection: expected %d, got %d", 0, jbGot.levelSection)
+	}
 }
