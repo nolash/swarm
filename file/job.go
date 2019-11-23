@@ -218,11 +218,18 @@ OUTER:
 	jb.target.resultC <- ref
 }
 
+// if last data index falls within the span, return the appropriate end count for the level
+// otherwise return 0 (which means job write until limit)
 func (jb *job) targetCountToEndCount(targetCount int) int {
-	endIndex, _ := jb.targetWithinJob(targetCount)
+	endIndex, ok := jb.targetWithinJob(targetCount)
+	if !ok {
+		return 0
+	}
 	return endIndex + 1
 }
 
+// returns the parent job of the receiver job
+// a new parent job is created if none exists for the slot
 func (jb *job) parent() *job {
 	newLevel := jb.level + 1
 	spanDivisor := jb.params.Spans[jb.level]
@@ -235,6 +242,8 @@ func (jb *job) parent() *job {
 	return newJob(jb.params, jb.target, jb.index, nil, jb.level+1, newDataSection)
 }
 
-func (jb *job) next() *job {
+// Next creates the job for the next data section span on the same level as the receiver job
+// this is only meant to be called once for each job, consequtive calls will overwrite index with new empty job
+func (jb *job) Next() *job {
 	return newJob(jb.params, jb.target, jb.index, nil, jb.level, jb.dataSection+jb.params.Spans[jb.level])
 }

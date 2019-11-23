@@ -349,7 +349,7 @@ func TestGetJobNext(t *testing.T) {
 	writer := bmt.New(pool).NewAsyncWriter(false)
 
 	jb := newJob(params, tgt, nil, writer, 1, branches)
-	jbn := jb.next()
+	jbn := jb.Next()
 	if jbn == nil {
 		t.Fatalf("parent: nil")
 	}
@@ -386,7 +386,7 @@ func TestGetJobParent(t *testing.T) {
 		t.Fatalf("levelsection: expected %d, got %d", 0, jbGot.levelSection)
 	}
 
-	jbNext := jb.next()
+	jbNext := jb.Next()
 	jbpNext := jbNext.parent()
 	if jbpNext != jbp {
 		t.Fatalf("next parent: expected %p, got %p", jbp, jbpNext)
