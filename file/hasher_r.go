@@ -35,7 +35,8 @@ func NewReferenceFileHasher(hasher *bmt.Hasher, branches int) *ReferenceFileHash
 // TODO: See if level 0 data can be written directly to hasher without complicating code
 func (f *ReferenceFileHasher) Hash(r io.Reader, l int) common.Hash {
 	f.totalBytes = l
-	levelCount := getLevelsFromLength(uint64(l), uint64(f.segmentSize), uint64(f.branches))
+	// TODO: old implementation of function skewed the level by 1, realign code to new, correct results
+	levelCount := getLevelsFromLength(l, f.segmentSize, f.branches) + 1
 	log.Trace("level count", "l", levelCount, "b", f.branches, "c", l, "s", f.segmentSize)
 	bufLen := f.segmentSize
 	for i := 1; i < levelCount; i++ {

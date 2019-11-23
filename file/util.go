@@ -29,15 +29,15 @@ func dataSectionToLevelSection(p *treeParams, lvl int, sections int) int {
 }
 
 // calculate how many levels the tree will. includes root hash as level
-func getLevelsFromLength(l uint64, sectionSize uint64, branches uint64) int {
+func getLevelsFromLength(l int, sectionSize int, branches int) int {
 	if l == 0 {
 		return 0
 	} else if l <= sectionSize*branches {
-		return 2
+		return 1
 	}
 	c := (l - 1) / (sectionSize)
 
-	return int(math.Log(float64(c))/math.Log(float64(branches)) + 2)
+	return int(math.Log(float64(c))/math.Log(float64(branches)) + 1)
 }
 
 //// calculates amount of sections the given data affects

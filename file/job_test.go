@@ -242,7 +242,11 @@ func TestJobWriteSpan(t *testing.T) {
 	defer cancel()
 	select {
 	case ref := <-tgt.Done():
-		t.Logf("%x", ref)
+		refCorrectHex := "0xc96c2b3736e076b69e258a02a056fdc3a3095d04bdd066fdbef006cda6034867"
+		refHex := hexutil.Encode(ref)
+		if refHex != refCorrectHex {
+			t.Fatalf("writespan sequential: expected %s, got %s", refCorrectHex, refHex)
+		}
 	case <-ctx.Done():
 		t.Fatalf("timeout: %v", ctx.Err())
 	}
@@ -278,7 +282,11 @@ func TestJobWriteSpanShuffle(t *testing.T) {
 	defer cancel()
 	select {
 	case ref := <-tgt.Done():
-		t.Logf("%x", ref)
+		refCorrectHex := "0xc96c2b3736e076b69e258a02a056fdc3a3095d04bdd066fdbef006cda6034867"
+		refHex := hexutil.Encode(ref)
+		if refHex != refCorrectHex {
+			t.Fatalf("writespan sequential: expected %s, got %s", refCorrectHex, refHex)
+		}
 	case <-ctx.Done():
 		t.Fatalf("timeout: %v", ctx.Err())
 	}
