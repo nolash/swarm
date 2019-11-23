@@ -324,17 +324,20 @@ func TestJobWriteSpanShuffle(t *testing.T) {
 }
 
 func TestJobIndex(t *testing.T) {
-	jobIndex := newJobIndex(9)
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches)
 	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
 	writer := bmt.New(pool).NewAsyncWriter(false)
 
-	jb := newJob(params, tgt, jobIndex, writer, 1, branches)
-	jobIndex.Add(jb)
+	jb := newJob(params, tgt, nil, writer, 1, branches)
+	jobIndex := jb.index
 	jbGot := jobIndex.Get(1, branches)
 	if jb != jbGot {
 		t.Fatalf("jbIndex get: expect %p, got %p", jb, jbGot)
+	}
+	jobIndex.Delete(jbGot)
+	if jobIndex.Get(1, branches) != nil {
+		t.Fatalf("jbIndex delete: expected nil")
 	}
 
 }

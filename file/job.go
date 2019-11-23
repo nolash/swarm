@@ -39,6 +39,10 @@ func (ji *jobIndex) Get(lvl int, section int) *job {
 	return jb.(*job)
 }
 
+func (ji *jobIndex) Delete(jb *job) {
+	ji.jobs[jb.level].Delete(jb.dataSection)
+}
+
 type target struct {
 	size     int32 // bytes written
 	sections int32 // sections written
