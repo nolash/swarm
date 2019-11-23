@@ -92,8 +92,10 @@ func (jb *job) size() int {
 	if endCount == 0 {
 		return count * jb.params.SectionSize * jb.params.Spans[jb.level]
 	}
-	// TODO: not complete
-	return 0
+	log.Trace("size", "sections", jb.target.sections)
+	//size := (int(jb.target.sections) - jb.dataSection - 1) % jb.params.Spans[jb.level]
+	//size += int(jb.target.size) % jb.params.SectionSize
+	return int(jb.target.size) % (jb.params.Spans[jb.level] * jb.params.SectionSize * jb.params.Branches)
 }
 
 // add data to job
@@ -160,8 +162,7 @@ OUTER:
 			// if the target count falls within the span of this job
 			// set the endcount so we know we have to do extra calculations for
 			// determining span in case of unbalanced tree
-			endIndex, _ := jb.targetWithinJob(targetCount)
-			endCount = endIndex + 1
+			endCount = jb.targetCountToEndCount(targetCount)
 			atomic.StoreInt32(&jb.endCount, int32(endCount))
 		}
 	}
@@ -171,4 +172,9 @@ OUTER:
 	log.Trace("job sum", "size", size, "span", span)
 	ref := jb.writer.Sum(nil, size, span)
 	jb.target.resultC <- ref
+}
+
+func (jb *job) targetCountToEndCount(targetCount int) int {
+	endIndex, _ := jb.targetWithinJob(targetCount)
+	return endIndex + 1
 }

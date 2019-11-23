@@ -185,6 +185,7 @@ func TestJobFinalSize(t *testing.T) {
 	finalSize := chunkSize*branches + chunkSize*sectionSize
 	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
 	tgt.Set(finalSize, finalSection, branches)
+	jb.endCount = int32(jb.targetCountToEndCount(tgt.Count()))
 	reportedSize := jb.size()
 	if finalSize != reportedSize {
 		t.Fatalf("size: expected %d, got %d", finalSize, reportedSize)
