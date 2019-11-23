@@ -11,7 +11,7 @@ import (
 
 type jobIndex struct {
 	maxLevels int
-	jobs      []map[int]*job
+	jobs      []sync.Map
 	mu        sync.Mutex
 }
 
@@ -20,15 +20,21 @@ func newJobIndex(maxLevels int) *jobIndex {
 		maxLevels: maxLevels,
 	}
 	for i := 0; i < maxLevels; i++ {
-		ji.jobs = append(ji.jobs, make(map[int]*job))
+		ji.jobs = append(ji.jobs, sync.Map{})
 	}
 	return ji
 }
 
 func (ji *jobIndex) Add(jb *job) {
-	ji.mu.Lock()
-	defer ji.mu.Unlock()
-	ji.jobs[jb.level][jb.dataSection] = jb
+	ji.jobs[jb.level].Store(jb.dataSection, jb)
+}
+
+func (ji *jobIndex) Get(lvl int, section int) *job {
+	jb, ok := ji.jobs[lvl].Load(section)
+	if !ok {
+		return nil
+	}
+	return jb.(*job)
 }
 
 type target struct {

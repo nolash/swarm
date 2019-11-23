@@ -348,4 +348,9 @@ func TestJobIndex(t *testing.T) {
 
 	jb := newJob(params, tgt, writer, 1, branches)
 	jobIndex.Add(jb)
+	jbGot := jobIndex.Get(1, branches)
+	if jb != jbGot {
+		t.Fatalf("jbIndex get: expect %p, got %p", jb, jbGot)
+	}
+
 }
