@@ -322,3 +322,30 @@ func TestJobWriteSpanShuffle(t *testing.T) {
 		t.Fatalf("job size: expected %d, got %d", chunkSize*branches, sz)
 	}
 }
+
+func TestGetJobParent(t *testing.T) {
+	tgt := newTarget()
+	params := newTreeParams(sectionSize, branches)
+	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
+	writer := bmt.New(pool).NewAsyncWriter(false)
+
+	jb := newJob(params, tgt, writer, 1, branches)
+	jbp := jb.parent()
+	if jbp == nil {
+		t.Fatalf("parent: nil")
+	}
+	if jbp.level != 2 {
+		t.Fatalf("parent level: expected %d, got %d", 2, jbp.level)
+	}
+}
+
+func TestJobIndex(t *testing.T) {
+	jobIndex := newJobIndex(9)
+	tgt := newTarget()
+	params := newTreeParams(sectionSize, branches)
+	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
+	writer := bmt.New(pool).NewAsyncWriter(false)
+
+	jb := newJob(params, tgt, writer, 1, branches)
+	jobIndex.Add(jb)
+}

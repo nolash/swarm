@@ -1,12 +1,35 @@
 package file
 
 import (
+	"sync"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethersphere/swarm/bmt"
 	"github.com/ethersphere/swarm/log"
 )
+
+type jobIndex struct {
+	maxLevels int
+	jobs      []map[int]*job
+	mu        sync.Mutex
+}
+
+func newJobIndex(maxLevels int) *jobIndex {
+	ji := &jobIndex{
+		maxLevels: maxLevels,
+	}
+	for i := 0; i < maxLevels; i++ {
+		ji.jobs = append(ji.jobs, make(map[int]*job))
+	}
+	return ji
+}
+
+func (ji *jobIndex) Add(jb *job) {
+	ji.mu.Lock()
+	defer ji.mu.Unlock()
+	ji.jobs[jb.level][jb.dataSection] = jb
+}
 
 type target struct {
 	size     int32 // bytes written
@@ -45,8 +68,9 @@ type jobUnit struct {
 
 // encapsulates one single chunk to be hashed
 type job struct {
-	target *target
-	params *treeParams
+	target      *target
+	params      *treeParams
+	registerJob func(int, int) *job
 
 	level           int   // level in tree
 	dataSection     int   // data section index
@@ -177,4 +201,8 @@ OUTER:
 func (jb *job) targetCountToEndCount(targetCount int) int {
 	endIndex, _ := jb.targetWithinJob(targetCount)
 	return endIndex + 1
+}
+
+func (jb *job) parent() *job {
+	return newJob(jb.params, jb.target, nil, jb.level+1, jb.dataSection)
 }
