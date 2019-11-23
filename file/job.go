@@ -82,12 +82,17 @@ func (jb *job) count() int {
 	return int(atomic.LoadInt32(&jb.cursorSection))
 }
 
+// size returns the byte size of the span the job represents
+// if job is last index in a level and writes have been finalized, it will return the target size
+// otherwise, regardless of job index, it will return the size according to the current write count
+// TODO: returning expected size in one case and actual size in another can lead to confusion
 func (jb *job) size() int {
 	count := jb.count()
 	endCount := int(atomic.LoadInt32(&jb.endCount))
 	if endCount == 0 {
 		return count * jb.params.SectionSize * jb.params.Spans[jb.level]
 	}
+	// TODO: not complete
 	return 0
 }
 

@@ -71,6 +71,7 @@ func TestDummySectionWriter(t *testing.T) {
 		t.Fatalf("Digest: expected %s, got %x", correctDigest, digest)
 	}
 }
+
 func TestTreeParams(t *testing.T) {
 
 	params := newTreeParams(sectionSize, branches)
@@ -172,6 +173,30 @@ func TestJobTarget(t *testing.T) {
 		t.Fatalf("timeout: %v", ctx.Err())
 	}
 
+}
+
+func TestJobFinalSize(t *testing.T) {
+	tgt := newTarget()
+	params := newTreeParams(sectionSize, branches)
+	writer := newDummySectionWriter(chunkSize*2, sectionSize)
+
+	jb := newJob(params, tgt, writer, 2, branches)
+
+	finalSize := chunkSize*branches + chunkSize*sectionSize
+	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
+	tgt.Set(finalSize, finalSection, branches)
+	reportedSize := jb.size()
+	if finalSize != reportedSize {
+		t.Fatalf("size: expected %d, got %d", finalSize, reportedSize)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
+	defer cancel()
+	select {
+	case <-tgt.Done():
+	case <-ctx.Done():
+		t.Fatalf("timeout: %v", ctx.Err())
+	}
 }
 
 func TestJobWriteOneAndFinish(t *testing.T) {
