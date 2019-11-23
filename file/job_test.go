@@ -342,6 +342,25 @@ func TestJobIndex(t *testing.T) {
 
 }
 
+func TestGetJobNext(t *testing.T) {
+	tgt := newTarget()
+	params := newTreeParams(sectionSize, branches)
+	pool := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
+	writer := bmt.New(pool).NewAsyncWriter(false)
+
+	jb := newJob(params, tgt, nil, writer, 1, branches)
+	jbn := jb.next()
+	if jbn == nil {
+		t.Fatalf("parent: nil")
+	}
+	if jbn.level != 1 {
+		t.Fatalf("nextjob level: expected %d, got %d", 2, jbn.level)
+	}
+	if jbn.dataSection != jb.dataSection+branches {
+		t.Fatalf("nextjob section: expected %d, got %d", 2, jbn.dataSection)
+	}
+}
+
 func TestGetJobParent(t *testing.T) {
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches)
@@ -356,14 +375,21 @@ func TestGetJobParent(t *testing.T) {
 	if jbp.level != 2 {
 		t.Fatalf("parent level: expected %d, got %d", 2, jbp.level)
 	}
-	if jbp.dataSection != 128 {
-		t.Fatalf("parent data section: expected %d, got %d", 128, jbp.dataSection)
+	if jbp.dataSection != 0 {
+		t.Fatalf("parent data section: expected %d, got %d", 0, jbp.dataSection)
 	}
-	jbGot := jb.index.Get(2, 128)
+	jbGot := jb.index.Get(2, 0)
 	if jbGot == nil {
 		t.Fatalf("index get: nil")
 	}
 	if jbGot.levelSection != 0 {
 		t.Fatalf("levelsection: expected %d, got %d", 0, jbGot.levelSection)
 	}
+
+	jbNext := jb.next()
+	jbpNext := jbNext.parent()
+	if jbpNext != jbp {
+		t.Fatalf("next parent: expected %p, got %p", jbp, jbpNext)
+	}
+
 }
