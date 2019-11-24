@@ -189,7 +189,7 @@ func TestJobFinalSize(t *testing.T) {
 	finalSize := chunkSize*branches + chunkSize*sectionSize
 	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
 	tgt.Set(finalSize, finalSection, 3)
-	jb.endCount = int32(jb.targetCountToEndCount(tgt.Count()))
+	jb.endCount = int32(jb.targetCountToEndCount(tgt.Count() - 1))
 	reportedSize := jb.size()
 	if finalSize != reportedSize {
 		t.Fatalf("size: expected %d, got %d", finalSize, reportedSize)
@@ -197,6 +197,7 @@ func TestJobFinalSize(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
+	close(jb.target.abortC)
 	select {
 	case <-tgt.Done():
 	case <-ctx.Done():

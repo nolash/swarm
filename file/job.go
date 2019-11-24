@@ -49,12 +49,14 @@ type target struct {
 	level    int32 // target level calculated from bytes written against branching factor and sector size
 	resultC  chan []byte
 	doneC    chan struct{}
+	abortC   chan struct{}
 }
 
 func newTarget() *target {
 	return &target{
 		resultC: make(chan []byte),
 		doneC:   make(chan struct{}),
+		abortC:  make(chan struct{}),
 	}
 }
 
@@ -151,7 +153,7 @@ func (jb *job) write(index int, data []byte) {
 }
 
 // determine whether the given data section count falls within the span of the current job
-func (jb *job) targetWithinJob(targetCount int) (int, bool) {
+func (jb *job) targetWithinJob(targetSection int) (int, bool) {
 	var endCount int
 	var ok bool
 
@@ -160,15 +162,15 @@ func (jb *job) targetWithinJob(targetCount int) (int, bool) {
 	upperLimit := jb.dataSection + jb.params.Spans[jb.level+1]
 
 	// the data section is the data section index where the span of this job starts
-	if targetCount >= jb.dataSection && targetCount < upperLimit {
+	if targetSection >= jb.dataSection && targetSection < upperLimit {
 
 		// data section index must be divided by corresponding section size on the job's level
 		// then wrap on branch period to find the correct section within this job
-		endCount = (targetCount / jb.params.Spans[jb.level]) % jb.params.Branches
+		endCount = (targetSection / jb.params.Spans[jb.level]) % jb.params.Branches
 
 		ok = true
 	}
-	log.Trace("within", "upper", upperLimit, "target", targetCount, "endcount", endCount, "ok", ok)
+	log.Trace("within", "upper", upperLimit, "target", targetSection, "endcount", endCount, "ok", ok)
 	return int(endCount), ok
 }
 
@@ -185,6 +187,10 @@ func (jb *job) process() {
 OUTER:
 	for {
 		select {
+		case <-jb.target.abortC:
+			log.Debug("hasher job aborted")
+			jb.target.resultC <- nil
+			return
 		case entry := <-jb.writeC:
 			newCount := jb.inc()
 			jb.writer.Write(entry.index, entry.data)
@@ -213,25 +219,43 @@ OUTER:
 		}
 	}
 
+	// abortC is only used for cancelling the hashing operation
+	close(jb.target.abortC)
+
+	// get the size of the span and execute the hash digest of the content
 	size := jb.size()
 	span := lengthToSpan(size)
-	log.Trace("job sum", "size", size, "span", span, "level", jb.level, "endcount", endCount)
+	log.Trace("job sum", "size", size, "span", span, "level", jb.level, "targetlevel", jb.target.level, "endcount", endCount)
 	ref := jb.writer.Sum(nil, size, span)
 
-	// BUG: Now falls through on balanced tree; level is equal but endcount is 0
+	// endCount > 0 means this is the last chunk on the level
+	// the hash from the level below the target level will be the result
 	if endCount > 0 && int(jb.target.level-1) == jb.level {
 		jb.target.resultC <- ref
 		return
 	}
-	parentSection := dataSectionToLevelSection(jb.params, 1, jb.dataSection)
+
+	// endCount == 0 means this is a full written chunk
+	// if we are on the target level, it means we have a balanced tree
+	// in which case the hash is the end result
+	if endCount == 0 && int(jb.target.level) == jb.level {
+		jb.target.resultC <- ref
+		return
+	}
+
+	// retrieve the parent and the corresponding section in it to write to
 	parent := jb.parent()
+	parentSection := dataSectionToLevelSection(jb.params, 1, jb.dataSection)
 	parent.write(parentSection, ref)
+
+	// job is done. We don't look back and boldly free up its resources
+	jb.index.Delete(jb)
 }
 
 // if last data index falls within the span, return the appropriate end count for the level
 // otherwise return 0 (which means job write until limit)
 func (jb *job) targetCountToEndCount(targetCount int) int {
-	endIndex, ok := jb.targetWithinJob(targetCount)
+	endIndex, ok := jb.targetWithinJob(targetCount - 1)
 	if !ok {
 		return 0
 	}
