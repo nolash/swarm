@@ -206,7 +206,7 @@ func TestJobWriteOneAndFinish(t *testing.T) {
 	params := newTreeParams(sectionSize, branches)
 	writer := newDummySectionWriter(chunkSize*2, sectionSize)
 
-	jb := newJob(params, tgt, nil, writer, 1, branches)
+	jb := newJob(params, tgt, nil, writer, 1, 0)
 	_, data := testutil.SerialData(32, 255, 0)
 	jb.write(1, data)
 
@@ -231,7 +231,7 @@ func TestJobWriteFull(t *testing.T) {
 	params := newTreeParams(sectionSize, branches)
 	writer := newDummySectionWriter(chunkSize*2, sectionSize)
 
-	jb := newJob(params, tgt, nil, writer, 1, branches)
+	jb := newJob(params, tgt, nil, writer, 1, 0)
 
 	_, data := testutil.SerialData(chunkSize, 255, 0)
 	for i := 0; i < branches; i++ {
