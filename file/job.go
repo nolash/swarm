@@ -75,6 +75,17 @@ func (t *target) Done() <-chan []byte {
 	return t.resultC
 }
 
+func (t *target) Abort() {
+	t.size = 0
+	t.sections = 0
+	t.level = 0
+	close(t.abortC)
+}
+
+func (t *target) Cleanup() {
+	close(t.abortC)
+}
+
 type jobUnit struct {
 	index int
 	data  []byte
@@ -187,59 +198,84 @@ func (jb *job) process() {
 OUTER:
 	for {
 		select {
+
+		// if aborted we exit immediately
 		case <-jb.target.abortC:
 			log.Debug("hasher job aborted")
 			jb.target.resultC <- nil
 			return
+
+		// enter here if new data is written to the job
 		case entry := <-jb.writeC:
 			newCount := jb.inc()
+			// this write is superfluous when the received data is the root hash
 			jb.writer.Write(entry.index, entry.data)
 			log.Trace("job write", "level", jb.level, "count", newCount, "index", entry.index, "data", hexutil.Encode(entry.data))
-			if newCount == jb.params.Branches || newCount == endCount {
+
+			// this is the full chunk write condition, and most common (when larger files are being written)
+			if newCount == jb.params.Branches {
 				break OUTER
 			}
+
+			// since newcount is incremented above it can only equal endcount if this has been set in the case below,
+			// which means data write has been completed
+			if newCount == endCount {
+
+				// expect one write on target level means we have the root hash
+				if endCount == 1 && int(jb.target.level) == jb.level {
+					jb.target.resultC <- entry.data
+					jb.target.Cleanup()
+					return
+				}
+				break OUTER
+			}
+
+		// enter here if data writes have been completed
+		// TODO: this case currently executes for all cycles after data write is complete for which writes to this job do not happen. perhaps it can be improved
 		case <-jb.target.doneC:
+
+			// we can never have count 0 and have a completed job
+			// this is the easiest check we can make
+			log.Trace("doneloop", "level", jb.level, "count", jb.count())
 			count := jb.count()
 			if count == 0 {
 				continue
 			}
+
+			// if we have reached the end count for this chunk, we proceed to hashing
+			// this case is important when write to the level happen after this goroutine
+			// registers that data writes have been completed
 			if count == int(endCount) {
+				log.Warn("breaking donec", "count", count, "endcount", endCount, "level", jb.level)
 				break OUTER
 			}
+
+			// if endcount is already calculated, don't calculate it again
 			if endCount > 0 {
 				continue
 			}
-			targetCount := jb.target.Count()
 
 			// if the target count falls within the span of this job
 			// set the endcount so we know we have to do extra calculations for
 			// determining span in case of unbalanced tree
+			// TODO: consider whether we can ALWAYS make the endcount to a value > 0 on the last chunk, which means we avoid the endcount=0 condition check on balanced tree further down
+			targetCount := jb.target.Count()
 			endCount = jb.targetCountToEndCount(targetCount)
 			atomic.StoreInt32(&jb.endCount, int32(endCount))
 		}
 	}
 
-	// abortC is only used for cancelling the hashing operation
-	close(jb.target.abortC)
-
 	// get the size of the span and execute the hash digest of the content
 	size := jb.size()
 	span := lengthToSpan(size)
-	log.Trace("job sum", "size", size, "span", span, "level", jb.level, "targetlevel", jb.target.level, "endcount", endCount)
+	log.Trace("job sum", "count", jb.count(), "size", size, "span", span, "level", jb.level, "targetlevel", jb.target.level, "endcount", endCount)
 	ref := jb.writer.Sum(nil, size, span)
 
 	// endCount > 0 means this is the last chunk on the level
 	// the hash from the level below the target level will be the result
 	if endCount > 0 && int(jb.target.level-1) == jb.level {
 		jb.target.resultC <- ref
-		return
-	}
-
-	// endCount == 0 means this is a full written chunk
-	// if we are on the target level, it means we have a balanced tree
-	// in which case the hash is the end result
-	if endCount == 0 && int(jb.target.level) == jb.level {
-		jb.target.resultC <- ref
+		jb.target.Cleanup()
 		return
 	}
 
