@@ -32,7 +32,7 @@ func TestDataSizeToSection(t *testing.T) {
 
 func TestDataSectionToLevelSection(t *testing.T) {
 
-	params := newTreeParams(sectionSize, branches)
+	params := newTreeParams(sectionSize, branches, nil)
 	sections := []int{branches - 1, branches, branches + 1, branches * 2, branches*2 + 1, branches * branches}
 	levels := []int{1, 2}
 	expects := []int{0, 1, 1, 2, 2, 128, 0, 0, 0, 0, 0, 1}

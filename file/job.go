@@ -80,10 +80,9 @@ type jobUnit struct {
 
 // encapsulates one single chunk to be hashed
 type job struct {
-	target      *target
-	params      *treeParams
-	index       *jobIndex
-	registerJob func(int, int) *job
+	target *target
+	params *treeParams
+	index  *jobIndex
 
 	level           int   // level in tree
 	dataSection     int   // data section index
@@ -96,13 +95,13 @@ type job struct {
 	writer bmt.SectionWriter // underlying data processor
 }
 
-func newJob(params *treeParams, tgt *target, jobIndex *jobIndex, writer bmt.SectionWriter, lvl int, dataSection int) *job {
+func newJob(params *treeParams, tgt *target, jobIndex *jobIndex, lvl int, dataSection int) *job {
 	jb := &job{
 		params:      params,
 		index:       jobIndex,
 		level:       lvl,
 		dataSection: dataSection,
-		writer:      writer,
+		writer:      params.hashFunc(),
 		writeC:      make(chan jobUnit),
 		target:      tgt,
 	}
@@ -169,6 +168,7 @@ func (jb *job) targetWithinJob(targetCount int) (int, bool) {
 
 		ok = true
 	}
+	log.Trace("within", "upper", upperLimit, "target", targetCount, "endcount", endCount, "ok", ok)
 	return int(endCount), ok
 }
 
@@ -188,19 +188,21 @@ OUTER:
 		case entry := <-jb.writeC:
 			newCount := jb.inc()
 			jb.writer.Write(entry.index, entry.data)
-			log.Trace("job write", "count", newCount, "index", entry.index, "data", hexutil.Encode(entry.data))
+			log.Trace("job write", "level", jb.level, "count", newCount, "index", entry.index, "data", hexutil.Encode(entry.data))
 			if newCount == jb.params.Branches || newCount == endCount {
 				break OUTER
 			}
 		case <-jb.target.doneC:
 			count := jb.count()
+			if count == 0 {
+				continue
+			}
 			if count == int(endCount) {
 				break OUTER
 			}
 			if endCount > 0 {
 				continue
 			}
-
 			targetCount := jb.target.Count()
 
 			// if the target count falls within the span of this job
@@ -213,9 +215,17 @@ OUTER:
 
 	size := jb.size()
 	span := lengthToSpan(size)
-	log.Trace("job sum", "size", size, "span", span)
+	log.Trace("job sum", "size", size, "span", span, "level", jb.level, "endcount", endCount)
 	ref := jb.writer.Sum(nil, size, span)
-	jb.target.resultC <- ref
+
+	// BUG: Now falls through on balanced tree; level is equal but endcount is 0
+	if endCount > 0 && int(jb.target.level-1) == jb.level {
+		jb.target.resultC <- ref
+		return
+	}
+	parentSection := dataSectionToLevelSection(jb.params, 1, jb.dataSection)
+	parent := jb.parent()
+	parent.write(parentSection, ref)
 }
 
 // if last data index falls within the span, return the appropriate end count for the level
@@ -239,11 +249,11 @@ func (jb *job) parent() *job {
 	if parent != nil {
 		return parent
 	}
-	return newJob(jb.params, jb.target, jb.index, nil, jb.level+1, newDataSection)
+	return newJob(jb.params, jb.target, jb.index, jb.level+1, newDataSection)
 }
 
 // Next creates the job for the next data section span on the same level as the receiver job
 // this is only meant to be called once for each job, consequtive calls will overwrite index with new empty job
 func (jb *job) Next() *job {
-	return newJob(jb.params, jb.target, jb.index, nil, jb.level, jb.dataSection+jb.params.Spans[jb.level])
+	return newJob(jb.params, jb.target, jb.index, jb.level, jb.dataSection+jb.params.Spans[jb.level])
 }
