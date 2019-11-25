@@ -228,6 +228,22 @@ func TestJobTarget(t *testing.T) {
 
 }
 
+func TestJobIndex(t *testing.T) {
+	tgt := newTarget()
+	params := newTreeParams(sectionSize, branches, dummyHashFunc)
+
+	jb := newJob(params, tgt, nil, 1, branches)
+	jobIndex := jb.index
+	jbGot := jobIndex.Get(1, branches)
+	if jb != jbGot {
+		t.Fatalf("jbIndex get: expect %p, got %p", jb, jbGot)
+	}
+	jobIndex.Delete(jbGot)
+	if jobIndex.Get(1, branches) != nil {
+		t.Fatalf("jbIndex delete: expected nil")
+	}
+}
+
 func TestGetJobNext(t *testing.T) {
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
@@ -270,6 +286,67 @@ func TestJobWriteTwoAndFinish(t *testing.T) {
 
 	if jb.count() != 2 {
 		t.Fatalf("jobcount: expected %d, got %d", 2, jb.count())
+	}
+}
+
+func TestGetJobParent(t *testing.T) {
+	tgt := newTarget()
+	params := newTreeParams(sectionSize, branches, dummyHashFunc)
+
+	jb := newJob(params, tgt, nil, 1, branches*branches)
+	jbp := jb.parent()
+	if jbp == nil {
+		t.Fatalf("parent: nil")
+	}
+	if jbp.level != 2 {
+		t.Fatalf("parent level: expected %d, got %d", 2, jbp.level)
+	}
+	if jbp.dataSection != 0 {
+		t.Fatalf("parent data section: expected %d, got %d", 0, jbp.dataSection)
+	}
+	jbGot := jb.index.Get(2, 0)
+	if jbGot == nil {
+		t.Fatalf("index get: nil")
+	}
+
+	jbNext := jb.Next()
+	jbpNext := jbNext.parent()
+	if jbpNext != jbp {
+		t.Fatalf("next parent: expected %p, got %p", jbp, jbpNext)
+	}
+}
+
+func TestWriteParentSection(t *testing.T) {
+	tgt := newTarget()
+	params := newTreeParams(sectionSize, branches, dummyHashFunc)
+	index := newJobIndex(9)
+
+	jb := newJob(params, tgt, index, 1, 0)
+	jbn := jb.Next()
+	_, data := testutil.SerialData(sectionSize*2, 255, 0)
+	jbn.write(0, data[:sectionSize])
+	jbn.write(1, data[sectionSize:])
+
+	finalSize := chunkSize*branches + chunkSize*2
+	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
+	tgt.Set(finalSize, finalSection, 3)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	select {
+	case <-tgt.Done():
+		t.Fatalf("unexpected done")
+	case <-ctx.Done():
+	}
+	jbnp := jbn.parent()
+	if jbnp.count() != 1 {
+		t.Fatalf("parent count: expected %d, got %d", 1, jbnp.count())
+	}
+	correctRefHex := "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+	parentRef := jbnp.writer.(*dummySectionWriter).data[32:64]
+	parentRefHex := hexutil.Encode(parentRef)
+	if parentRefHex != correctRefHex {
+		t.Fatalf("parent data: expected %s, got %s", correctRefHex, parentRefHex)
 	}
 }
 
@@ -389,67 +466,5 @@ func TestJobWriteSpanShuffle(t *testing.T) {
 	sz := jb.size()
 	if sz != chunkSize*branches {
 		t.Fatalf("job size: expected %d, got %d", chunkSize*branches, sz)
-	}
-}
-
-func TestJobIndex(t *testing.T) {
-	tgt := newTarget()
-	params := newTreeParams(sectionSize, branches, dummyHashFunc)
-
-	jb := newJob(params, tgt, nil, 1, branches)
-	jobIndex := jb.index
-	jbGot := jobIndex.Get(1, branches)
-	if jb != jbGot {
-		t.Fatalf("jbIndex get: expect %p, got %p", jb, jbGot)
-	}
-	jobIndex.Delete(jbGot)
-	if jobIndex.Get(1, branches) != nil {
-		t.Fatalf("jbIndex delete: expected nil")
-	}
-
-}
-
-func TestGetJobParent(t *testing.T) {
-	tgt := newTarget()
-	params := newTreeParams(sectionSize, branches, dummyHashFunc)
-
-	jb := newJob(params, tgt, nil, 1, branches*branches)
-	jbp := jb.parent()
-	if jbp == nil {
-		t.Fatalf("parent: nil")
-	}
-	if jbp.level != 2 {
-		t.Fatalf("parent level: expected %d, got %d", 2, jbp.level)
-	}
-	if jbp.dataSection != 0 {
-		t.Fatalf("parent data section: expected %d, got %d", 0, jbp.dataSection)
-	}
-	jbGot := jb.index.Get(2, 0)
-	if jbGot == nil {
-		t.Fatalf("index get: nil")
-	}
-
-	jbNext := jb.Next()
-	jbpNext := jbNext.parent()
-	if jbpNext != jbp {
-		t.Fatalf("next parent: expected %p, got %p", jbp, jbpNext)
-	}
-}
-
-func TestWriteParentSection(t *testing.T) {
-	tgt := newTarget()
-	params := newTreeParams(sectionSize, branches, dummyHashFunc)
-
-	jb := newJob(params, tgt, nil, 1, branches)
-	_, data := testutil.SerialData(sectionSize, 255, 0)
-	jb.write(branches, data)
-	tgt.Set(chunkSize+sectionSize, sectionSize+1, 1)
-	jbp := jb.parent()
-	if jbp.count() != 1 {
-		t.Fatalf("parent count: expected %d, got %d", 1, jbp.count())
-	}
-	parentData := jbp.writer.(*dummySectionWriter).data[0:32]
-	if !bytes.Equal(parentData, data) {
-		t.Fatalf("parent data: expected %x, got %x", data, parentData)
 	}
 }
