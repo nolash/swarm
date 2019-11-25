@@ -13,6 +13,7 @@ import (
 type jobIndex struct {
 	maxLevels int
 	jobs      []sync.Map
+	topHashes [][]byte
 	mu        sync.Mutex
 }
 
@@ -24,6 +25,10 @@ func newJobIndex(maxLevels int) *jobIndex {
 		ji.jobs = append(ji.jobs, sync.Map{})
 	}
 	return ji
+}
+
+func (ji *jobIndex) String() string {
+	return fmt.Sprintf("%p", ji)
 }
 
 func (ji *jobIndex) Add(jb *job) {
@@ -41,6 +46,19 @@ func (ji *jobIndex) Get(lvl int, section int) *job {
 
 func (ji *jobIndex) Delete(jb *job) {
 	ji.jobs[jb.level].Delete(jb.dataSection)
+}
+
+func (ji *jobIndex) AddTopHash(ref []byte) {
+	ji.mu.Lock()
+	defer ji.mu.Unlock()
+	ji.topHashes = append(ji.topHashes, ref)
+	log.Trace("added top hash", "length", len(ji.topHashes), "index", ji)
+}
+
+func (ji *jobIndex) GetTopHash(lvl int) []byte {
+	ji.mu.Lock()
+	defer ji.mu.Unlock()
+	return ji.topHashes[lvl-1]
 }
 
 type target struct {
@@ -64,11 +82,12 @@ func (t *target) Set(size int, sections int, level int) {
 	atomic.StoreInt32(&t.size, int32(size))
 	atomic.StoreInt32(&t.sections, int32(sections))
 	atomic.StoreInt32(&t.level, int32(level))
+	log.Trace("target set", "size", size, "sections", sections, "level", level)
 	close(t.doneC)
 }
 
 func (t *target) Count() int {
-	return int(atomic.LoadInt32(&t.sections))
+	return int(atomic.LoadInt32(&t.sections)) + 1
 }
 
 func (t *target) Done() <-chan []byte {
@@ -99,7 +118,6 @@ type job struct {
 
 	level           int   // level in tree
 	dataSection     int   // data section index
-	levelSection    int   // level section index
 	cursorSection   int32 // next write position in job
 	endCount        int32 // number of writes to be written to this job (0 means write to capacity)
 	lastSectionSize int   // data size on the last data section write
@@ -122,9 +140,10 @@ func newJob(params *treeParams, tgt *target, jobIndex *jobIndex, lvl int, dataSe
 		jb.index = newJobIndex(9)
 	}
 
-	jb.levelSection = dataSectionToLevelSection(params, lvl, dataSection)
 	jb.index.Add(jb)
-	go jb.process()
+	if !params.Debug {
+		go jb.process()
+	}
 	return jb
 }
 
@@ -150,39 +169,26 @@ func (jb *job) size() int {
 	if endCount == 0 {
 		return count * jb.params.SectionSize * jb.params.Spans[jb.level]
 	}
-	log.Trace("size", "sections", jb.target.sections)
+	log.Trace("size", "sections", jb.target.sections, "endcount", endCount, "level", jb.level)
 	return int(jb.target.size) % (jb.params.Spans[jb.level] * jb.params.SectionSize * jb.params.Branches)
 }
 
 // add data to job
 // does no checking for data length or index validity
 func (jb *job) write(index int, data []byte) {
+
+	// if a write is received at the first datasection of a level we need to store this hash
+	// in case of a balanced tree and we need to send it to resultC later
+	// at the time of hasing of a balanced tree we have no way of knowing for sure whether
+	// that is the end of the job or not
+	if len(jb.index.topHashes) < jb.level && jb.dataSection == 0 {
+		log.Trace("have tophash", "level", jb.level, "ref", hexutil.Encode(data))
+		jb.index.AddTopHash(data)
+	}
 	jb.writeC <- jobUnit{
 		index: index,
 		data:  data,
 	}
-}
-
-// determine whether the given data section count falls within the span of the current job
-func (jb *job) targetWithinJob(targetSection int) (int, bool) {
-	var endCount int
-	var ok bool
-
-	// span one level above equals the data size of 128 units of one section on this level
-	// using the span table saves one multiplication
-	upperLimit := jb.dataSection + jb.params.Spans[jb.level+1]
-
-	// the data section is the data section index where the span of this job starts
-	if targetSection >= jb.dataSection && targetSection < upperLimit {
-
-		// data section index must be divided by corresponding section size on the job's level
-		// then wrap on branch period to find the correct section within this job
-		endCount = (targetSection / jb.params.Spans[jb.level]) % jb.params.Branches
-
-		ok = true
-	}
-	log.Trace("within", "upper", upperLimit, "target", targetSection, "endcount", endCount, "ok", ok)
-	return int(endCount), ok
 }
 
 // runs in loop until:
@@ -208,25 +214,18 @@ OUTER:
 		// enter here if new data is written to the job
 		case entry := <-jb.writeC:
 			newCount := jb.inc()
+			log.Trace("job write", "datasection", jb.dataSection, "level", jb.level, "count", jb.count(), "index", entry.index, "data", hexutil.Encode(entry.data))
 			// this write is superfluous when the received data is the root hash
 			jb.writer.Write(entry.index, entry.data)
-			log.Trace("job write", "level", jb.level, "count", newCount, "index", entry.index, "data", hexutil.Encode(entry.data))
-
-			// this is the full chunk write condition, and most common (when larger files are being written)
-			if newCount == jb.params.Branches {
-				break OUTER
-			}
 
 			// since newcount is incremented above it can only equal endcount if this has been set in the case below,
 			// which means data write has been completed
+			// otherwise if we reached the chunk limit we also continue to hashing
 			if newCount == endCount {
-
-				// expect one write on target level means we have the root hash
-				if endCount == 1 && int(jb.target.level) == jb.level {
-					jb.target.resultC <- entry.data
-					jb.target.Cleanup()
-					return
-				}
+				log.Trace("quitting writec - endcount")
+			}
+			if newCount == jb.params.Branches {
+				log.Trace("quitting writec - branches")
 				break OUTER
 			}
 
@@ -236,7 +235,7 @@ OUTER:
 
 			// we can never have count 0 and have a completed job
 			// this is the easiest check we can make
-			log.Trace("doneloop", "level", jb.level, "count", jb.count())
+			//log.Trace("doneloop", "level", jb.level, "count", jb.count(), "endcount", endCount)
 			count := jb.count()
 			if count == 0 {
 				continue
@@ -246,7 +245,7 @@ OUTER:
 			// this case is important when write to the level happen after this goroutine
 			// registers that data writes have been completed
 			if count == int(endCount) {
-				log.Warn("breaking donec", "count", count, "endcount", endCount, "level", jb.level)
+				log.Trace("quitting donec", "level", jb.level, "count", jb.count())
 				break OUTER
 			}
 
@@ -265,11 +264,18 @@ OUTER:
 		}
 	}
 
+	if int(jb.target.level) == jb.level {
+		jb.target.resultC <- jb.index.GetTopHash(jb.level)
+		return
+	}
+
 	// get the size of the span and execute the hash digest of the content
 	size := jb.size()
 	span := lengthToSpan(size)
-	log.Trace("job sum", "count", jb.count(), "size", size, "span", span, "level", jb.level, "targetlevel", jb.target.level, "endcount", endCount)
-	ref := jb.writer.Sum(nil, size, span)
+	refSize := jb.count() * jb.params.SectionSize
+	log.Trace("job sum", "count", jb.count(), "refsize", refSize, "size", size, "datasection", jb.dataSection, "span", span, "level", jb.level, "targetlevel", jb.target.level, "endcount", endCount)
+	//ref := jb.writer.Sum(nil, size, span)
+	ref := jb.writer.Sum(nil, refSize, span)
 
 	// endCount > 0 means this is the last chunk on the level
 	// the hash from the level below the target level will be the result
@@ -281,11 +287,35 @@ OUTER:
 
 	// retrieve the parent and the corresponding section in it to write to
 	parent := jb.parent()
-	parentSection := dataSectionToLevelSection(jb.params, 1, jb.dataSection)
+	parentSection := dataSectionToLevelSection(jb.params, jb.level+1, jb.dataSection)
 	parent.write(parentSection, ref)
 
 	// job is done. We don't look back and boldly free up its resources
 	jb.index.Delete(jb)
+}
+
+// determine whether the given data section count falls within the span of the current job
+func (jb *job) targetWithinJob(targetSection int) (int, bool) {
+	var endCount int
+	var ok bool
+
+	// span one level above equals the data size of 128 units of one section on this level
+	// using the span table saves one multiplication
+	//dataBoundary := dataSectionToLevelBoundary(jb.params, jb.level, jb.dataSection)
+	dataBoundary := dataSectionToLevelBoundary(jb.params, jb.level, jb.dataSection)
+	upperLimit := dataBoundary + jb.params.Spans[jb.level+1]
+
+	// the data section is the data section index where the span of this job starts
+	if targetSection >= dataBoundary && targetSection < upperLimit {
+
+		// data section index must be divided by corresponding section size on the job's level
+		// then wrap on branch period to find the correct section within this job
+		endCount = (targetSection / jb.params.Spans[jb.level]) % jb.params.Branches
+
+		ok = true
+	}
+	log.Trace("within", "level", jb.level, "datasection", jb.dataSection, "boundary", dataBoundary, "upper", upperLimit, "target", targetSection, "endcount", endCount, "ok", ok)
+	return int(endCount), ok
 }
 
 // if last data index falls within the span, return the appropriate end count for the level
@@ -304,7 +334,8 @@ func (jb *job) parent() *job {
 	newLevel := jb.level + 1
 	spanDivisor := jb.params.Spans[jb.level]
 	// Truncate to even quotient which is the actual logarithmic boundary of the data section under the span
-	newDataSection := ((dataSectionToLevelSection(jb.params, 1, jb.dataSection)) / spanDivisor) * spanDivisor
+	//newDataSection := ((dataSectionToLevelSection(jb.params, 1, jb.dataSection)) / spanDivisor) * spanDivisor
+	newDataSection := (jb.dataSection / spanDivisor) * spanDivisor
 	parent := jb.index.Get(newLevel, newDataSection)
 	if parent != nil {
 		return parent
@@ -315,5 +346,5 @@ func (jb *job) parent() *job {
 // Next creates the job for the next data section span on the same level as the receiver job
 // this is only meant to be called once for each job, consequtive calls will overwrite index with new empty job
 func (jb *job) Next() *job {
-	return newJob(jb.params, jb.target, jb.index, jb.level, jb.dataSection+jb.params.Spans[jb.level])
+	return newJob(jb.params, jb.target, jb.index, jb.level, jb.dataSection+jb.params.Spans[jb.level+1])
 }

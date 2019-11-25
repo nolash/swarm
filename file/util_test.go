@@ -30,12 +30,16 @@ func TestDataSizeToSection(t *testing.T) {
 
 }
 
+// TestsDataSectionToLevelSection translates the section index of the data to the section index of the given level
 func TestDataSectionToLevelSection(t *testing.T) {
 
 	params := newTreeParams(sectionSize, branches, nil)
-	sections := []int{branches - 1, branches, branches + 1, branches * 2, branches*2 + 1, branches * branches}
+	sections := []int{0, branches - 1, branches, branches + 1, branches * 2, branches*2 + 1, branches * branches}
 	levels := []int{1, 2}
-	expects := []int{0, 1, 1, 2, 2, 128, 0, 0, 0, 0, 0, 1}
+	expects := []int{
+		0, 0, 1, 1, 2, 2, 128,
+		0, 0, 0, 0, 0, 0, 1,
+	}
 
 	for i, lvl := range levels {
 		for j, section := range sections {
@@ -43,9 +47,42 @@ func TestDataSectionToLevelSection(t *testing.T) {
 			k := i*len(sections) + j
 			expect := expects[k]
 			if expect != r {
-				t.Fatalf("size %d level %d: expected %d, got %d", section, lvl, expect, r)
+				t.Fatalf("levelsection size %d level %d: expected %d, got %d", section, lvl, expect, r)
 			}
 		}
 	}
 
+}
+
+func TestDataSectionToLevelBoundary(t *testing.T) {
+	params := newTreeParams(sectionSize, branches, nil)
+	size := chunkSize*branches + chunkSize*2
+	section := dataSizeToSectionIndex(size, sectionSize)
+	lvl := 1
+	expect := branches * branches
+
+	r := dataSectionToLevelBoundary(params, lvl, section)
+	if expect != r {
+		t.Fatalf("levelboundary size %d level %d: expected %d, got %d", section, lvl, expect, r)
+	}
+
+	size = chunkSize*branches*branches + chunkSize*2
+	section = dataSizeToSectionIndex(size, sectionSize)
+	lvl = 1
+	expect = branches * branches * branches
+
+	r = dataSectionToLevelBoundary(params, lvl, section)
+	if expect != r {
+		t.Fatalf("levelboundary size %d level %d: expected %d, got %d", section, lvl, expect, r)
+	}
+
+	size = chunkSize*branches + chunkSize*2
+	section = dataSizeToSectionIndex(size, sectionSize)
+	lvl = 2
+	expect = 0
+
+	r = dataSectionToLevelBoundary(params, lvl, section)
+	if expect != r {
+		t.Fatalf("levelboundary size %d level %d: expected %d, got %d", section, lvl, expect, r)
+	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethersphere/swarm/bmt"
+	"github.com/ethersphere/swarm/log"
 	"github.com/ethersphere/swarm/testutil"
 	"golang.org/x/crypto/sha3"
 )
@@ -17,6 +18,9 @@ import (
 var (
 	dummyHashFunc = func() bmt.SectionWriter {
 		return newDummySectionWriter(chunkSize*branches, sectionSize)
+	}
+	noHashFunc = func() bmt.SectionWriter {
+		return nil
 	}
 )
 
@@ -80,7 +84,7 @@ func TestDummySectionWriter(t *testing.T) {
 
 func TestTreeParams(t *testing.T) {
 
-	params := newTreeParams(sectionSize, branches, dummyHashFunc)
+	params := newTreeParams(sectionSize, branches, noHashFunc)
 
 	if params.SectionSize != 32 {
 		t.Fatalf("section: expected %d, got %d", sectionSize, params.SectionSize)
@@ -94,6 +98,26 @@ func TestTreeParams(t *testing.T) {
 		t.Fatalf("span %d: expected %d, got %d", 2, branches*branches, params.Spans[1])
 	}
 
+}
+
+func TestTargetWithinJob(t *testing.T) {
+	params := newTreeParams(sectionSize, branches, noHashFunc)
+	params.Debug = true
+	index := newJobIndex(9)
+
+	jb := newJob(params, nil, index, 1, branches*branches)
+	defer index.Delete(jb)
+
+	finalSize := chunkSize*branches + chunkSize*2
+	finalCount := dataSizeToSectionCount(finalSize, sectionSize)
+	log.Trace("within test", "size", finalSize, "count", finalCount)
+	c, ok := jb.targetWithinJob(finalCount - 1)
+	if !ok {
+		t.Fatalf("target %d within %d: expected true", finalCount, jb.level)
+	}
+	if c != 1 {
+		t.Fatalf("target %d within %d: expected %d, got %d", finalCount, jb.level, 2, c)
+	}
 }
 
 // BUG: leaks goroutine
@@ -115,25 +139,55 @@ func TestTarget(t *testing.T) {
 	}
 }
 
-// BUG: leaks goroutine
 func TestNewJob(t *testing.T) {
 
-	tgt := newTarget()
-	params := newTreeParams(sectionSize, branches, dummyHashFunc)
+	params := newTreeParams(sectionSize, branches, noHashFunc)
+	params.Debug = true
 
-	jb := newJob(params, tgt, nil, 1, branches+1)
+	tgt := newTarget()
+	jb := newJob(params, tgt, nil, 1, branches*branches+1)
 
 	if jb.level != 1 {
 		t.Fatalf("job level expected 1, got %d", jb.level)
 	}
 
-	if jb.dataSection != branches+1 {
+	if jb.dataSection != branches*branches+1 {
 		t.Fatalf("datasectionindex: expected %d, got %d", branches+1, jb.dataSection)
 	}
 
-	if jb.levelSection != 1 {
-		t.Fatalf("levelsectionindex: expected %d, got %d", 1, jb.levelSection)
+}
+
+func TestJobSize(t *testing.T) {
+
+	params := newTreeParams(sectionSize, branches, noHashFunc)
+	params.Debug = true
+	index := newJobIndex(9)
+
+	tgt := newTarget()
+	jb := newJob(params, tgt, index, 3, 0)
+	jb.cursorSection = 1
+	jb.endCount = 1
+	size := chunkSize*branches + chunkSize
+	sections := dataSizeToSectionIndex(size, sectionSize) + 1
+	tgt.Set(size, sections, 3)
+	jobSize := jb.size()
+	if jobSize != size {
+		t.Fatalf("job size: expected %d, got %d", size, jobSize)
 	}
+	index.Delete(jb)
+
+	tgt = newTarget()
+	jb = newJob(params, tgt, index, 3, 0)
+	jb.cursorSection = 1
+	jb.endCount = 1
+	size = chunkSize * branches * branches
+	sections = dataSizeToSectionIndex(size, sectionSize) + 1
+	tgt.Set(size, sections, 3)
+	jobSize = jb.size()
+	if jobSize != size {
+		t.Fatalf("job size: expected %d, got %d", size, jobSize)
+	}
+	index.Delete(jb)
 
 }
 
@@ -141,6 +195,7 @@ func TestJobTarget(t *testing.T) {
 
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
+	params.Debug = true
 	index := newJobIndex(9)
 
 	startSection := branches * branches
@@ -153,6 +208,7 @@ func TestJobTarget(t *testing.T) {
 	if ok {
 		t.Fatalf("targetwithinjob: expected false")
 	}
+	index.Delete(jb)
 
 	// anything between chunksize*128 and chunksize*128*2 will be within the job span
 	finalSize = chunkSize*branches + chunkSize*2
@@ -164,44 +220,29 @@ func TestJobTarget(t *testing.T) {
 	if c != 1 {
 		t.Fatalf("targetwithinjob section %d: expected %d, got %d", startSection, 1, c)
 	}
+	c = jb.targetCountToEndCount(finalSection + 1)
+	if c != 2 {
+		t.Fatalf("targetcounttoendcount section %d: expected %d, got %d", startSection, 2, c)
+	}
 	index.Delete(jb)
-
-	startSection = 0
-	jb = newJob(params, tgt, index, 1, startSection) // second level index, equals 128 data chunk writes
-	finalSize = chunkSize * 2
-	finalSection = dataSizeToSectionIndex(finalSize, sectionSize)
-	c, ok = jb.targetWithinJob(finalSection)
-	if !ok {
-		t.Fatalf("targetwithinjob section %d: expected true", startSection)
-	}
-	if c != 1 {
-		t.Fatalf("targetwithinjob section %d: expected %d, got %d", startSection, 1, c)
-	}
 
 }
 
-func TestJobFinalSize(t *testing.T) {
+func TestGetJobNext(t *testing.T) {
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
+	params.Debug = true
 
-	jb := newJob(params, tgt, nil, 2, branches)
-
-	finalSize := chunkSize*branches + chunkSize*sectionSize
-	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
-	tgt.Set(finalSize, finalSection, 3)
-	jb.endCount = int32(jb.targetCountToEndCount(tgt.Count() - 1))
-	reportedSize := jb.size()
-	if finalSize != reportedSize {
-		t.Fatalf("size: expected %d, got %d", finalSize, reportedSize)
+	jb := newJob(params, tgt, nil, 1, branches*branches)
+	jbn := jb.Next()
+	if jbn == nil {
+		t.Fatalf("parent: nil")
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
-	defer cancel()
-	close(jb.target.abortC)
-	select {
-	case <-tgt.Done():
-	case <-ctx.Done():
-		t.Fatalf("timeout: %v", ctx.Err())
+	if jbn.level != 1 {
+		t.Fatalf("nextjob level: expected %d, got %d", 2, jbn.level)
+	}
+	if jbn.dataSection != jb.dataSection+branches*branches {
+		t.Fatalf("nextjob section: expected %d, got %d", jb.dataSection+branches*branches, jbn.dataSection)
 	}
 }
 
@@ -245,10 +286,15 @@ func TestJobWriteFull(t *testing.T) {
 	}
 
 	tgt.Set(chunkSize, branches, 2)
+	correctRefHash := "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
 	select {
-	case <-tgt.Done():
+	case ref := <-tgt.Done():
+		refHash := hexutil.Encode(ref)
+		if refHash != correctRefHash {
+			t.Fatalf("job write full: expected %s, got %s", correctRefHash, refHash)
+		}
 	case <-ctx.Done():
 		t.Fatalf("timeout: %v", ctx.Err())
 	}
@@ -266,15 +312,20 @@ func TestJobWriteSpan(t *testing.T) {
 	}
 	params := newTreeParams(sectionSize, branches, hashFunc)
 
-	jb := newJob(params, tgt, nil, 1, branches)
-	_, data := testutil.SerialData(chunkSize, 255, 0)
+	jb := newJob(params, tgt, nil, 1, 0)
+	_, data := testutil.SerialData(chunkSize+sectionSize*2, 255, 0)
 
-	for i := 0; i < len(data); i += sectionSize {
+	for i := 0; i < chunkSize; i += sectionSize {
 		jb.write(i/sectionSize, data[i:i+sectionSize])
 	}
-	tgt.Set(chunkSize*branches, branches+1, 2)
+	jbn := jb.Next()
+	jbn.write(0, data[chunkSize:chunkSize+sectionSize])
+	jbn.write(1, data[chunkSize+sectionSize:])
+	finalSize := chunkSize*branches + chunkSize*2
+	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
+	tgt.Set(finalSize, finalSection, 3)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*1)
 	defer cancel()
 	select {
 	case ref := <-tgt.Done():
@@ -288,8 +339,13 @@ func TestJobWriteSpan(t *testing.T) {
 	}
 
 	sz := jb.size()
-	if sz != chunkSize*branches {
-		t.Fatalf("job size: expected %d, got %d", chunkSize*branches, sz)
+	if sz != chunkSize {
+		t.Fatalf("job 1 size: expected %d, got %d", chunkSize, sz)
+	}
+
+	sz = jbn.size()
+	if sz != sectionSize {
+		t.Fatalf("job 2 size: expected %d, got %d", sectionSize, sz)
 	}
 }
 
@@ -352,28 +408,11 @@ func TestJobIndex(t *testing.T) {
 
 }
 
-func TestGetJobNext(t *testing.T) {
-	tgt := newTarget()
-	params := newTreeParams(sectionSize, branches, dummyHashFunc)
-
-	jb := newJob(params, tgt, nil, 1, branches)
-	jbn := jb.Next()
-	if jbn == nil {
-		t.Fatalf("parent: nil")
-	}
-	if jbn.level != 1 {
-		t.Fatalf("nextjob level: expected %d, got %d", 2, jbn.level)
-	}
-	if jbn.dataSection != jb.dataSection+branches {
-		t.Fatalf("nextjob section: expected %d, got %d", 2, jbn.dataSection)
-	}
-}
-
 func TestGetJobParent(t *testing.T) {
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
 
-	jb := newJob(params, tgt, nil, 1, branches)
+	jb := newJob(params, tgt, nil, 1, branches*branches)
 	jbp := jb.parent()
 	if jbp == nil {
 		t.Fatalf("parent: nil")
@@ -381,15 +420,12 @@ func TestGetJobParent(t *testing.T) {
 	if jbp.level != 2 {
 		t.Fatalf("parent level: expected %d, got %d", 2, jbp.level)
 	}
-	if jbp.dataSection != 0 {
-		t.Fatalf("parent data section: expected %d, got %d", 0, jbp.dataSection)
+	if jbp.dataSection != branches*branches {
+		t.Fatalf("parent data section: expected %d, got %d", branches*branches, jbp.dataSection)
 	}
-	jbGot := jb.index.Get(2, 0)
+	jbGot := jb.index.Get(2, branches*branches)
 	if jbGot == nil {
 		t.Fatalf("index get: nil")
-	}
-	if jbGot.levelSection != 0 {
-		t.Fatalf("levelsection: expected %d, got %d", 0, jbGot.levelSection)
 	}
 
 	jbNext := jb.Next()
@@ -397,7 +433,6 @@ func TestGetJobParent(t *testing.T) {
 	if jbpNext != jbp {
 		t.Fatalf("next parent: expected %p, got %p", jbp, jbpNext)
 	}
-
 }
 
 func TestWriteParentSection(t *testing.T) {

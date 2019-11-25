@@ -6,6 +6,7 @@ type treeParams struct {
 	SectionSize int
 	Branches    int
 	Spans       []int
+	Debug       bool
 	hashFunc    func() bmt.SectionWriter
 }
 
@@ -22,5 +23,4 @@ func newTreeParams(section int, branches int, hashFunc func() bmt.SectionWriter)
 		span *= p.Branches
 	}
 	return p
-
 }

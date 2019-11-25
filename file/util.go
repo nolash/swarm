@@ -3,6 +3,8 @@ package file
 import (
 	"encoding/binary"
 	"math"
+
+	"github.com/ethersphere/swarm/log"
 )
 
 // creates a binary span size representation
@@ -16,16 +18,26 @@ func lengthToSpan(length int) []byte {
 
 // calculates the section index of the given byte size
 func dataSizeToSectionIndex(length int, sectionSize int) int {
-
 	return (length - 1) / sectionSize
+}
 
+func dataSizeToSectionCount(length int, sectionSize int) int {
+	return dataSizeToSectionIndex(length, sectionSize) + 1
 }
 
 func dataSectionToLevelSection(p *treeParams, lvl int, sections int) int {
-
 	span := p.Spans[lvl]
 	return sections / span
+}
 
+func dataSectionToLevelBoundary(p *treeParams, lvl int, section int) int {
+	span := p.Spans[lvl+1]
+	//levelSection := dataSectionToLevelSection(p, lvl, section)
+	//log.Trace("levelboundary", "levelsection", levelSection, "section", section, "span", span)
+	spans := section / span
+	spanBytes := spans * span
+	log.Trace("levelboundary", "spans", spans, "section", section, "span", span)
+	return spanBytes
 }
 
 // calculate how many levels the tree will. includes root hash as level
