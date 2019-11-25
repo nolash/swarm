@@ -94,17 +94,6 @@ func (t *target) Done() <-chan []byte {
 	return t.resultC
 }
 
-func (t *target) Abort() {
-	t.size = 0
-	t.sections = 0
-	t.level = 0
-	close(t.abortC)
-}
-
-func (t *target) Cleanup() {
-	close(t.abortC)
-}
-
 type jobUnit struct {
 	index int
 	data  []byte
@@ -199,6 +188,8 @@ func (jb *job) write(index int, data []byte) {
 // - data write is finalized and targetcount is reached on a subsequent job write
 func (jb *job) process() {
 
+	defer jb.destroy()
+
 	// is set when data write is finished, AND
 	// the final data section falls within the span of this job
 	// if not, loop will only exit on Branches writes
@@ -206,12 +197,6 @@ func (jb *job) process() {
 OUTER:
 	for {
 		select {
-
-		// if aborted we exit immediately
-		case <-jb.target.abortC:
-			log.Debug("hasher job aborted")
-			jb.target.resultC <- nil
-			return
 
 		// enter here if new data is written to the job
 		case entry := <-jb.writeC:
@@ -283,7 +268,6 @@ OUTER:
 	// the hash from the level below the target level will be the result
 	if endCount > 0 && int(jb.target.level-1) == jb.level {
 		jb.target.resultC <- ref
-		jb.target.Cleanup()
 		return
 	}
 
@@ -292,8 +276,6 @@ OUTER:
 	parentSection := dataSectionToLevelSection(jb.params, jb.level+1, jb.dataSection)
 	parent.write(parentSection, ref)
 
-	// job is done. We don't look back and boldly free up its resources
-	jb.index.Delete(jb)
 }
 
 // determine whether the given data section count falls within the span of the current job
@@ -351,4 +333,9 @@ func (jb *job) parent() *job {
 // this is only meant to be called once for each job, consequtive calls will overwrite index with new empty job
 func (jb *job) Next() *job {
 	return newJob(jb.params, jb.target, jb.index, jb.level, jb.dataSection+jb.params.Spans[jb.level+1])
+}
+
+func (jb *job) destroy() {
+	jb.writer.Reset()
+	jb.index.Delete(jb)
 }

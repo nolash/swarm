@@ -101,12 +101,12 @@ func TestTreeParams(t *testing.T) {
 }
 
 func TestTargetWithinJob(t *testing.T) {
-	params := newTreeParams(sectionSize, branches, noHashFunc)
+	params := newTreeParams(sectionSize, branches, dummyHashFunc)
 	params.Debug = true
 	index := newJobIndex(9)
 
 	jb := newJob(params, nil, index, 1, branches*branches)
-	defer index.Delete(jb)
+	defer jb.destroy()
 
 	finalSize := chunkSize*branches + chunkSize*2
 	finalCount := dataSizeToSectionCount(finalSize, sectionSize)
@@ -141,7 +141,7 @@ func TestTarget(t *testing.T) {
 
 func TestNewJob(t *testing.T) {
 
-	params := newTreeParams(sectionSize, branches, noHashFunc)
+	params := newTreeParams(sectionSize, branches, dummyHashFunc)
 	params.Debug = true
 
 	tgt := newTarget()
@@ -154,12 +154,13 @@ func TestNewJob(t *testing.T) {
 	if jb.dataSection != branches*branches+1 {
 		t.Fatalf("datasectionindex: expected %d, got %d", branches+1, jb.dataSection)
 	}
+	jb.destroy()
 
 }
 
 func TestJobSize(t *testing.T) {
 
-	params := newTreeParams(sectionSize, branches, noHashFunc)
+	params := newTreeParams(sectionSize, branches, dummyHashFunc)
 	params.Debug = true
 	index := newJobIndex(9)
 
@@ -174,7 +175,7 @@ func TestJobSize(t *testing.T) {
 	if jobSize != size {
 		t.Fatalf("job size: expected %d, got %d", size, jobSize)
 	}
-	index.Delete(jb)
+	jb.destroy()
 
 	tgt = newTarget()
 	jb = newJob(params, tgt, index, 3, 0)
@@ -187,7 +188,7 @@ func TestJobSize(t *testing.T) {
 	if jobSize != size {
 		t.Fatalf("job size: expected %d, got %d", size, jobSize)
 	}
-	index.Delete(jb)
+	jb.destroy()
 
 }
 
@@ -208,7 +209,7 @@ func TestJobTarget(t *testing.T) {
 	if ok {
 		t.Fatalf("targetwithinjob: expected false")
 	}
-	index.Delete(jb)
+	jb.destroy()
 
 	// anything between chunksize*128 and chunksize*128*2 will be within the job span
 	finalSize = chunkSize*branches + chunkSize*2
@@ -224,8 +225,7 @@ func TestJobTarget(t *testing.T) {
 	if c != 2 {
 		t.Fatalf("targetcounttoendcount section %d: expected %d, got %d", startSection, 2, c)
 	}
-	index.Delete(jb)
-
+	jb.destroy()
 }
 
 func TestJobIndex(t *testing.T) {
@@ -238,7 +238,7 @@ func TestJobIndex(t *testing.T) {
 	if jb != jbGot {
 		t.Fatalf("jbIndex get: expect %p, got %p", jb, jbGot)
 	}
-	jobIndex.Delete(jbGot)
+	jbGot.destroy()
 	if jobIndex.Get(1, branches) != nil {
 		t.Fatalf("jbIndex delete: expected nil")
 	}
@@ -289,6 +289,7 @@ func TestJobWriteTwoAndFinish(t *testing.T) {
 	}
 }
 
+// BUG: not guaranteed to return same parent when run with eg -count 100
 func TestGetJobParent(t *testing.T) {
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
@@ -491,8 +492,8 @@ func TestJobWriteSpanShuffle(t *testing.T) {
 // TestVectors executes the barebones functionality of the hasher
 // TODO: vet against the referencefilehasher instead of expect vector
 func TestVectors(t *testing.T) {
-	poolAsync := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
 	poolSync := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
+	poolAsync := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
 	refHashFunc := func() bmt.SectionWriter {
 		return bmt.New(poolAsync).NewAsyncWriter(false)
 	}
@@ -501,7 +502,6 @@ func TestVectors(t *testing.T) {
 
 	for i := start; i < end; i++ {
 		tgt := newTarget()
-		index := newJobIndex(9)
 		dataLength := dataLengths[i]
 		_, data := testutil.SerialData(dataLength, 255, 0)
 		jb := newJob(params, tgt, nil, 1, 0)
@@ -518,11 +518,11 @@ func TestVectors(t *testing.T) {
 			dataHash.ResetWithLength(span)
 			c, err := dataHash.Write(data[i:ie])
 			if err != nil {
-				index.Delete(jb)
+				jb.destroy()
 				t.Fatalf("data ref fail: %v", err)
 			}
 			if c != ie-i {
-				index.Delete(jb)
+				jb.destroy()
 				t.Fatalf("data ref short write: expect %d, got %d", ie-i, c)
 			}
 			ref := dataHash.Sum(nil)
