@@ -27,6 +27,9 @@ var (
 	}
 )
 
+// simple bmt.SectionWriter hasher that keeps the data written to it
+// for later inspection
+// TODO: see if this can be replaced with the fake hasher from storage module
 type dummySectionWriter struct {
 	data        []byte
 	sectionSize int
@@ -41,23 +44,29 @@ func newDummySectionWriter(cp int, sectionSize int) *dummySectionWriter {
 	}
 }
 
+// implements bmt.SectionWriter
+// BUG: not actually writing to hasher
 func (d *dummySectionWriter) Write(index int, data []byte) {
 	copy(d.data[index*sectionSize:], data)
 }
 
+// implements bmt.SectionWriter
 func (d *dummySectionWriter) Sum(b []byte, size int, span []byte) []byte {
 	return d.writer.Sum(b)
 }
 
+// implements bmt.SectionWriter
 func (d *dummySectionWriter) Reset() {
 	d.data = make([]byte, len(d.data))
 	d.writer.Reset()
 }
 
+// implements bmt.SectionWriter
 func (d *dummySectionWriter) SectionSize() int {
 	return d.sectionSize
 }
 
+// TestDummySectionWriter
 func TestDummySectionWriter(t *testing.T) {
 
 	w := newDummySectionWriter(chunkSize*2, sectionSize)
@@ -85,6 +94,7 @@ func TestDummySectionWriter(t *testing.T) {
 	}
 }
 
+// TestTreeParams verifies that params are set correctly by the param constructor
 func TestTreeParams(t *testing.T) {
 
 	params := newTreeParams(sectionSize, branches, noHashFunc)
@@ -103,6 +113,27 @@ func TestTreeParams(t *testing.T) {
 
 }
 
+// TestTarget verifies that params are set correctly by the target constructor
+func TestTarget(t *testing.T) {
+
+	tgt := newTarget()
+	tgt.Set(32, 1, 2)
+
+	if tgt.size != 32 {
+		t.Fatalf("target size expected %d, got %d", 32, tgt.size)
+	}
+
+	if tgt.sections != 1 {
+		t.Fatalf("target sections expected %d, got %d", 1, tgt.sections)
+	}
+
+	if tgt.level != 2 {
+		t.Fatalf("target level expected %d, got %d", 2, tgt.level)
+	}
+}
+
+// TestTargetWithinJob verifies the calculation of whether a final data section index
+// falls within a particular job's span
 func TestTargetWithinJob(t *testing.T) {
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
 	params.Debug = true
@@ -123,25 +154,7 @@ func TestTargetWithinJob(t *testing.T) {
 	}
 }
 
-// BUG: leaks goroutine
-func TestTarget(t *testing.T) {
-
-	tgt := newTarget()
-	tgt.Set(32, 1, 2)
-
-	if tgt.size != 32 {
-		t.Fatalf("target size expected %d, got %d", 32, tgt.size)
-	}
-
-	if tgt.sections != 1 {
-		t.Fatalf("target sections expected %d, got %d", 1, tgt.sections)
-	}
-
-	if tgt.level != 2 {
-		t.Fatalf("target level expected %d, got %d", 2, tgt.level)
-	}
-}
-
+// TestNewJob verifies that a job is initialized with the correct values
 func TestNewJob(t *testing.T) {
 
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
@@ -149,20 +162,20 @@ func TestNewJob(t *testing.T) {
 
 	tgt := newTarget()
 	jb := newJob(params, tgt, nil, 1, branches*branches+1)
-
 	if jb.level != 1 {
 		t.Fatalf("job level expected 1, got %d", jb.level)
 	}
-
 	if jb.dataSection != branches*branches+1 {
 		t.Fatalf("datasectionindex: expected %d, got %d", branches+1, jb.dataSection)
 	}
+	tgt.Set(0, 0, 0)
 	jb.destroy()
-
 }
 
+// TestJobSize verifies the data size calculation used for calculating the span of data
+// under a particular level reference
+// it tests both a balanced and an unbalanced tree
 func TestJobSize(t *testing.T) {
-
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
 	params.Debug = true
 	index := newJobIndex(9)
@@ -195,17 +208,18 @@ func TestJobSize(t *testing.T) {
 
 }
 
+// TestJobTarget verifies that the underlying calculation for determining whether
+// a data section index is within a level's span is correct
 func TestJobTarget(t *testing.T) {
-
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
 	params.Debug = true
 	index := newJobIndex(9)
 
-	startSection := branches * branches
-	jb := newJob(params, tgt, index, 1, startSection) // second level index, equals 128 data chunk writes
+	jb := newJob(params, tgt, index, 1, branches*branches)
 
-	// anything less than chunksize * 128 will not be in the job span
+	// this is less than chunksize * 128
+	// it will not be in the job span
 	finalSize := chunkSize + sectionSize + 1
 	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
 	c, ok := jb.targetWithinJob(finalSection)
@@ -214,23 +228,26 @@ func TestJobTarget(t *testing.T) {
 	}
 	jb.destroy()
 
-	// anything between chunksize*128 and chunksize*128*2 will be within the job span
+	// chunkSize*128+chunkSize*2 (532480) is within chunksize*128 (524288) and chunksize*128*2 (1048576)
+	// it will be within the job span
 	finalSize = chunkSize*branches + chunkSize*2
 	finalSection = dataSizeToSectionIndex(finalSize, sectionSize)
 	c, ok = jb.targetWithinJob(finalSection)
 	if !ok {
-		t.Fatalf("targetwithinjob section %d: expected true", startSection)
+		t.Fatalf("targetwithinjob section %d: expected true", branches*branches)
 	}
 	if c != 1 {
-		t.Fatalf("targetwithinjob section %d: expected %d, got %d", startSection, 1, c)
+		t.Fatalf("targetwithinjob section %d: expected %d, got %d", branches*branches, 1, c)
 	}
 	c = jb.targetCountToEndCount(finalSection + 1)
 	if c != 2 {
-		t.Fatalf("targetcounttoendcount section %d: expected %d, got %d", startSection, 2, c)
+		t.Fatalf("targetcounttoendcount section %d: expected %d, got %d", branches*branches, 2, c)
 	}
 	jb.destroy()
 }
 
+// TestJobIndex verifies that the job constructor adds the job to the job index
+// and removes it on job destruction
 func TestJobIndex(t *testing.T) {
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
@@ -247,6 +264,8 @@ func TestJobIndex(t *testing.T) {
 	}
 }
 
+// TestGetJobNext verifies that the new job constructed through the job.Next() method
+// has the correct level and data section index
 func TestGetJobNext(t *testing.T) {
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
@@ -265,6 +284,8 @@ func TestGetJobNext(t *testing.T) {
 	}
 }
 
+// TestJobWriteTwoAndFinish writes two references to a job and sets the job target to two chunks
+// it verifies that the job count after the writes is two, and the hash is correct
 func TestJobWriteTwoAndFinish(t *testing.T) {
 
 	tgt := newTarget()
@@ -282,7 +303,12 @@ func TestJobWriteTwoAndFinish(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*199)
 	defer cancel()
 	select {
-	case <-tgt.Done():
+	case ref := <-tgt.Done():
+		correctRefHex := "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+		refHex := hexutil.Encode(ref)
+		if refHex != correctRefHex {
+			t.Fatalf("job write full: expected %s, got %s", correctRefHex, refHex)
+		}
 	case <-ctx.Done():
 		t.Fatalf("timeout: %v", ctx.Err())
 	}
@@ -292,6 +318,8 @@ func TestJobWriteTwoAndFinish(t *testing.T) {
 	}
 }
 
+// TestGetJobParent verifies that the parent returned from two jobs' parent() calls
+// that are within the same span as the parent chunk of references is the same
 // BUG: not guaranteed to return same parent when run with eg -count 100
 func TestGetJobParent(t *testing.T) {
 	tgt := newTarget()
@@ -320,6 +348,8 @@ func TestGetJobParent(t *testing.T) {
 	}
 }
 
+// TestWriteParentSection verifies that a data write translates to a write
+// in the correct section of its parent
 func TestWriteParentSection(t *testing.T) {
 	tgt := newTarget()
 	params := newTreeParams(sectionSize, branches, dummyHashFunc)
@@ -354,6 +384,8 @@ func TestWriteParentSection(t *testing.T) {
 	}
 }
 
+// TestJobWriteFull verifies the hashing result of the write of a balanced tree
+// where the simulated tree is chunkSize*branches worth of data
 func TestJobWriteFull(t *testing.T) {
 
 	tgt := newTarget()
@@ -367,14 +399,14 @@ func TestJobWriteFull(t *testing.T) {
 	}
 
 	tgt.Set(chunkSize, branches, 2)
-	correctRefHash := "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+	correctRefHex := "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
 	select {
 	case ref := <-tgt.Done():
-		refHash := hexutil.Encode(ref)
-		if refHash != correctRefHash {
-			t.Fatalf("job write full: expected %s, got %s", correctRefHash, refHash)
+		refHex := hexutil.Encode(ref)
+		if refHex != correctRefHex {
+			t.Fatalf("job write full: expected %s, got %s", correctRefHex, refHex)
 		}
 	case <-ctx.Done():
 		t.Fatalf("timeout: %v", ctx.Err())
@@ -406,7 +438,7 @@ func TestJobWriteSpan(t *testing.T) {
 	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
 	tgt.Set(finalSize, finalSection, 3)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*1000)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
 	select {
 	case ref := <-tgt.Done():

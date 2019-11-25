@@ -270,7 +270,6 @@ OUTER:
 			// if the target count falls within the span of this job
 			// set the endcount so we know we have to do extra calculations for
 			// determining span in case of unbalanced tree
-			// TODO: consider whether we can ALWAYS make the endcount to a value > 0 on the last chunk, which means we avoid the endcount=0 condition check on balanced tree further down
 			targetCount := jb.target.Count()
 			endCount = jb.targetCountToEndCount(targetCount)
 			atomic.StoreInt32(&jb.endCount, int32(endCount))
