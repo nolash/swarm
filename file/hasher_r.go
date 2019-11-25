@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethersphere/swarm/bmt"
 	"github.com/ethersphere/swarm/log"
 )
@@ -71,7 +72,7 @@ func (f *ReferenceFileHasher) Hash(r io.Reader, l int) common.Hash {
 // TODO: check if length 0
 // performs recursive hashing on complete batches or data end
 func (f *ReferenceFileHasher) write(b []byte, level int, end bool) bool {
-	log.Debug("write", "l", level, "len", len(b), "b", b, "end", end, "wbc", f.writeByteCount)
+	log.Debug("write", "l", level, "len", len(b), "b", hexutil.Encode(b), "end", end, "wbc", f.writeByteCount)
 
 	// copy data from buffer to current position of corresponding level in buffer
 	copy(f.buffer[f.cursors[level]*f.segmentSize:], b)
@@ -126,7 +127,7 @@ func (f *ReferenceFileHasher) write(b []byte, level int, end bool) bool {
 		writeHashOffset := f.cursors[level+1] * f.segmentSize
 		f.hasher.Write(f.buffer[writeHashOffset : writeHashOffset+hashDataSize])
 		hashResult := f.hasher.Sum(nil)
-		log.Debug("summed", "b", hashResult, "l", f.cursors[level], "l+1", f.cursors[level+1], "spanlength", dataUnderSpan, "span", span, "meta", meta, "from", writeHashOffset, "to", writeHashOffset+hashDataSize, "data", f.buffer[writeHashOffset:writeHashOffset+hashDataSize])
+		log.Debug("summed", "b", hexutil.Encode(hashResult), "l", f.cursors[level], "l+1", f.cursors[level+1], "spanlength", dataUnderSpan, "span", span, "meta", meta, "from", writeHashOffset, "to", writeHashOffset+hashDataSize, "data", f.buffer[writeHashOffset:writeHashOffset+hashDataSize])
 		res = f.write(hashResult, level+1, end)
 
 		// recycle buffer space from the threshold of just written hash

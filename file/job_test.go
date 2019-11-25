@@ -436,8 +436,8 @@ func TestJobWriteSpanShuffle(t *testing.T) {
 	}
 	params := newTreeParams(sectionSize, branches, hashFunc)
 
-	jb := newJob(params, tgt, nil, 1, branches)
-	_, data := testutil.SerialData(chunkSize, 255, 0)
+	jb := newJob(params, tgt, nil, 1, 0)
+	_, data := testutil.SerialData(chunkSize+sectionSize*2, 255, 0)
 
 	var idxs []int
 	for i := 0; i < branches; i++ {
@@ -450,21 +450,104 @@ func TestJobWriteSpanShuffle(t *testing.T) {
 		jb.write(idx, data[idx*sectionSize:idx*sectionSize+sectionSize])
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*1000)
+	jbn := jb.Next()
+	jbn.write(0, data[chunkSize:chunkSize+sectionSize])
+	jbn.write(1, data[chunkSize+sectionSize:])
+	finalSize := chunkSize*branches + chunkSize*2
+	finalSection := dataSizeToSectionIndex(finalSize, sectionSize)
+	tgt.Set(finalSize, finalSection, 3)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
 	select {
 	case ref := <-tgt.Done():
-		refCorrectHex := "0xc96c2b3736e076b69e258a02a056fdc3a3095d04bdd066fdbef006cda6034867"
+		refCorrectHex := "0xee56134cab34a5a612648dcc22d88b7cb543081bd144906dfc4fa93802c9addf"
 		refHex := hexutil.Encode(ref)
+		jbparent := jb.parent()
+		jbnparent := jbn.parent()
+		log.Info("succeeding", "jb count", jb.count(), "jbn count", jbn.count(), "jb parent count", jbparent.count(), "jbn parent count", jbnparent.count())
 		if refHex != refCorrectHex {
 			t.Fatalf("writespan sequential: expected %s, got %s", refCorrectHex, refHex)
 		}
 	case <-ctx.Done():
+
+		jbparent := jb.parent()
+		jbnparent := jbn.parent()
+		log.Error("failing", "jb count", jb.count(), "jbn count", jbn.count(), "jb parent count", jbparent.count(), "jbn parent count", jbnparent.count())
 		t.Fatalf("timeout: %v", ctx.Err())
 	}
 
 	sz := jb.size()
 	if sz != chunkSize*branches {
 		t.Fatalf("job size: expected %d, got %d", chunkSize*branches, sz)
+	}
+
+	sz = jbn.size()
+	if sz != chunkSize*2 {
+		t.Fatalf("job size: expected %d, got %d", chunkSize*branches, sz)
+	}
+}
+
+// TestVectors executes the barebones functionality of the hasher
+// TODO: vet against the referencefilehasher instead of expect vector
+func TestVectors(t *testing.T) {
+	poolAsync := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
+	poolSync := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
+	refHashFunc := func() bmt.SectionWriter {
+		return bmt.New(poolAsync).NewAsyncWriter(false)
+	}
+	dataHash := bmt.New(poolSync)
+	params := newTreeParams(sectionSize, branches, refHashFunc)
+
+	for i := start; i < end; i++ {
+		tgt := newTarget()
+		index := newJobIndex(9)
+		dataLength := dataLengths[i]
+		_, data := testutil.SerialData(dataLength, 255, 0)
+		jb := newJob(params, tgt, nil, 1, 0)
+		count := 0
+		log.Info("test vector", "length", dataLength)
+		for i := 0; i < dataLength; i += chunkSize {
+			ie := i + chunkSize
+			if ie > dataLength {
+				ie = dataLength
+			}
+			writeSize := ie - i
+			span := lengthToSpan(writeSize)
+			log.Debug("data write", "i", i, "length", writeSize, "span", span)
+			dataHash.ResetWithLength(span)
+			c, err := dataHash.Write(data[i:ie])
+			if err != nil {
+				index.Delete(jb)
+				t.Fatalf("data ref fail: %v", err)
+			}
+			if c != ie-i {
+				index.Delete(jb)
+				t.Fatalf("data ref short write: expect %d, got %d", ie-i, c)
+			}
+			ref := dataHash.Sum(nil)
+			log.Debug("data ref", "i", i, "ie", ie, "data", hexutil.Encode(ref))
+			jb.write(count, ref)
+			count += 1
+			if ie%(chunkSize*branches) == 0 {
+				jb = jb.Next()
+				count = 0
+			}
+		}
+		dataSections := dataSizeToSectionIndex(dataLength, params.SectionSize)
+		tgt.Set(dataLength, dataSections, getLevelsFromLength(dataLength, params.SectionSize, params.Branches))
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*1000)
+		defer cancel()
+		select {
+		case ref := <-tgt.Done():
+			// TODO: double check that this hash if correct!!
+			refCorrectHex := "0x" + expected[i]
+			refHex := hexutil.Encode(ref)
+			if refHex != refCorrectHex {
+				t.Fatalf("writespan sequential: expected %s, got %s", refCorrectHex, refHex)
+			}
+		case <-ctx.Done():
+			t.Fatalf("timeout: %v", ctx.Err())
+		}
 	}
 }

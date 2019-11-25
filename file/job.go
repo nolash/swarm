@@ -124,6 +124,8 @@ type job struct {
 
 	writeC chan jobUnit
 	writer bmt.SectionWriter // underlying data processor
+
+	mu sync.Mutex
 }
 
 func newJob(params *treeParams, tgt *target, jobIndex *jobIndex, lvl int, dataSection int) *job {
@@ -331,6 +333,8 @@ func (jb *job) targetCountToEndCount(targetCount int) int {
 // returns the parent job of the receiver job
 // a new parent job is created if none exists for the slot
 func (jb *job) parent() *job {
+	jb.index.mu.Lock()
+	defer jb.index.mu.Unlock()
 	newLevel := jb.level + 1
 	//spanDivisor := jb.params.Spans[jb.level]
 	// Truncate to even quotient which is the actual logarithmic boundary of the data section under the span
