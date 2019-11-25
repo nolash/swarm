@@ -2,6 +2,7 @@ package file
 
 import "testing"
 
+// TestLevelsFromLength verifies getLevelsFromLength
 func TestLevelsFromLength(t *testing.T) {
 
 	sizes := []int{sectionSize, chunkSize, chunkSize + sectionSize, chunkSize * branches, chunkSize*branches + 1}
@@ -15,7 +16,8 @@ func TestLevelsFromLength(t *testing.T) {
 	}
 }
 
-func TestDataSizeToSection(t *testing.T) {
+// TestDataSizeToSection verifies testDataSizeToSectionIndex
+func TestDataSizeToSectionIndex(t *testing.T) {
 
 	sizes := []int{chunkSize - 1, chunkSize, chunkSize + 1}
 	expects := []int{branches - 1, branches - 1, branches}
@@ -30,7 +32,7 @@ func TestDataSizeToSection(t *testing.T) {
 
 }
 
-// TestsDataSectionToLevelSection translates the section index of the data to the section index of the given level
+// TestsDataSectionToLevelSection verifies dataSectionToLevelSection
 func TestDataSectionToLevelSection(t *testing.T) {
 
 	params := newTreeParams(sectionSize, branches, nil)
@@ -54,6 +56,7 @@ func TestDataSectionToLevelSection(t *testing.T) {
 
 }
 
+// TestDataSectionToLevelBoundary verifies dataSectionToLevelBoundary
 func TestDataSectionToLevelBoundary(t *testing.T) {
 	params := newTreeParams(sectionSize, branches, nil)
 	size := chunkSize*branches + chunkSize*2

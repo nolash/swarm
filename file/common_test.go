@@ -55,8 +55,8 @@ var (
 		"522194562123473dcfd7a457b18ee7dee8b7db70ed3cfa2b73f348a992fdfd3b", // 19, reference file hasher returns false on this match, claims 3606dd2e51a2a71fd12bc5cacfd4d4191073e0bf3dd2a60528c2515f15920006
 	}
 
-	start = 13
-	end   = 14 //len(dataLengths)
+	start = 0
+	end   = 1 //len(dataLengths)
 )
 
 func init() {

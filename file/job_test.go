@@ -22,6 +22,7 @@ var (
 	dummyHashFunc = func() bmt.SectionWriter {
 		return newDummySectionWriter(chunkSize*branches, sectionSize)
 	}
+	// placeholder for cases where a hasher is not necessary
 	noHashFunc = func() bmt.SectionWriter {
 		return nil
 	}
@@ -416,6 +417,9 @@ func TestJobWriteFull(t *testing.T) {
 	}
 }
 
+// TestJobWriteSpan uses the bmt asynchronous hasher
+// it verifies that a result can be attained at chunkSize+sectionSize*2 references
+// which translates to chunkSize*branches+chunkSize*2 bytes worth of data
 func TestJobWriteSpan(t *testing.T) {
 
 	tgt := newTarget()
@@ -463,6 +467,9 @@ func TestJobWriteSpan(t *testing.T) {
 	}
 }
 
+// TestJobWriteSpanShuffle does the same as TestJobWriteSpan but
+// shuffles the indices of the first chunk write
+// verifying that sequential use of the underlying hasher is not required
 func TestJobWriteSpanShuffle(t *testing.T) {
 
 	tgt := newTarget()
@@ -525,7 +532,9 @@ func TestJobWriteSpanShuffle(t *testing.T) {
 }
 
 // TestVectors executes the barebones functionality of the hasher
-// TODO: vet against the referencefilehasher instead of expect vector
+// and verifies against source of truth results generated from the reference hasher
+// for the same data
+// TODO: vet dynamically against the referencefilehasher instead of expect vector
 func TestVectors(t *testing.T) {
 	poolSync := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
 	poolAsync := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
@@ -586,6 +595,7 @@ func TestVectors(t *testing.T) {
 	}
 }
 
+// BenchmarkVector generates benchmarks that are comparable to the pyramid hasher
 func BenchmarkVector(b *testing.B) {
 	for i := start; i < end; i++ {
 		b.Run(fmt.Sprintf("%d/%d", i, dataLengths[i]), benchmarkVector)
