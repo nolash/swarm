@@ -3,8 +3,11 @@ package file
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"hash"
 	"math/rand"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -540,7 +543,6 @@ func TestVectors(t *testing.T) {
 		defer cancel()
 		select {
 		case ref := <-tgt.Done():
-			// TODO: double check that this hash if correct!!
 			refCorrectHex := "0x" + expected[i]
 			refHex := hexutil.Encode(ref)
 			if refHex != refCorrectHex {
@@ -548,6 +550,80 @@ func TestVectors(t *testing.T) {
 			}
 		case <-ctx.Done():
 			t.Fatalf("timeout: %v", ctx.Err())
+		}
+	}
+}
+
+func BenchmarkVector(b *testing.B) {
+	for i := start; i < end; i++ {
+		b.Run(fmt.Sprintf("%d/%d", i, dataLengths[i]), benchmarkVector)
+	}
+}
+
+func benchmarkVector(b *testing.B) {
+	params := strings.Split(b.Name(), "/")
+	testIdx, err := strconv.ParseInt(params[1], 10, 64)
+	dataLengthParam, err := strconv.ParseInt(params[2], 10, 64)
+	if err != nil {
+		b.Fatal(err)
+	}
+	i := int(testIdx)
+	dataLength := int(dataLengthParam)
+
+	poolSync := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
+	poolAsync := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
+	refHashFunc := func() bmt.SectionWriter {
+		return bmt.New(poolAsync).NewAsyncWriter(false)
+	}
+	dataHash := bmt.New(poolSync)
+	treeParams := newTreeParams(sectionSize, branches, refHashFunc)
+
+	for j := 0; j < b.N; j++ {
+		tgt := newTarget()
+		_, data := testutil.SerialData(dataLength, 255, 0)
+		jb := newJob(treeParams, tgt, nil, 1, 0)
+		count := 0
+		log.Info("test vector", "length", dataLength)
+		for i := 0; i < dataLength; i += chunkSize {
+			ie := i + chunkSize
+			if ie > dataLength {
+				ie = dataLength
+			}
+			writeSize := ie - i
+			span := lengthToSpan(writeSize)
+			log.Debug("data write", "i", i, "length", writeSize, "span", span)
+			dataHash.ResetWithLength(span)
+			c, err := dataHash.Write(data[i:ie])
+			if err != nil {
+				jb.destroy()
+				b.Fatalf("data ref fail: %v", err)
+			}
+			if c != ie-i {
+				jb.destroy()
+				b.Fatalf("data ref short write: expect %d, got %d", ie-i, c)
+			}
+			ref := dataHash.Sum(nil)
+			log.Debug("data ref", "i", i, "ie", ie, "data", hexutil.Encode(ref))
+			jb.write(count, ref)
+			count += 1
+			if ie%(chunkSize*branches) == 0 {
+				jb = jb.Next()
+				count = 0
+			}
+		}
+		dataSections := dataSizeToSectionIndex(dataLength, treeParams.SectionSize)
+		tgt.Set(dataLength, dataSections, getLevelsFromLength(dataLength, treeParams.SectionSize, treeParams.Branches))
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*1000)
+		defer cancel()
+		select {
+		case ref := <-tgt.Done():
+			refCorrectHex := "0x" + expected[i]
+			refHex := hexutil.Encode(ref)
+			if refHex != refCorrectHex {
+				b.Fatalf("writespan sequential: expected %s, got %s", refCorrectHex, refHex)
+			}
+		case <-ctx.Done():
+			b.Fatalf("timeout: %v", ctx.Err())
 		}
 	}
 }
