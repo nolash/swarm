@@ -332,10 +332,10 @@ func (jb *job) targetCountToEndCount(targetCount int) int {
 // a new parent job is created if none exists for the slot
 func (jb *job) parent() *job {
 	newLevel := jb.level + 1
-	spanDivisor := jb.params.Spans[jb.level]
+	//spanDivisor := jb.params.Spans[jb.level]
 	// Truncate to even quotient which is the actual logarithmic boundary of the data section under the span
-	//newDataSection := ((dataSectionToLevelSection(jb.params, 1, jb.dataSection)) / spanDivisor) * spanDivisor
-	newDataSection := (jb.dataSection / spanDivisor) * spanDivisor
+	newDataSection := dataSectionToLevelBoundary(jb.params, jb.level+1, jb.dataSection)
+	//newDataSection := (jb.dataSection / spanDivisor) * spanDivisor
 	parent := jb.index.Get(newLevel, newDataSection)
 	if parent != nil {
 		return parent
