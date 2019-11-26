@@ -240,6 +240,7 @@ OUTER:
 			// otherwise if we reached the chunk limit we also continue to hashing
 			if newCount == endCount {
 				log.Trace("quitting writec - endcount")
+				break OUTER
 			}
 			if newCount == jb.params.Branches {
 				log.Trace("quitting writec - branches")
@@ -377,7 +378,7 @@ func (jb *job) Next() *job {
 	return newJob(jb.params, jb.target, jb.index, jb.level, jb.dataSection+jb.params.Spans[jb.level+1])
 }
 
-// cleans up the job
+// cleans up the job; reset hasher and remove pointer to job from index
 func (jb *job) destroy() {
 	jb.writer.Reset()
 	jb.index.Delete(jb)

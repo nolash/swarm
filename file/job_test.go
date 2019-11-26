@@ -604,12 +604,10 @@ func BenchmarkVector(b *testing.B) {
 
 func benchmarkVector(b *testing.B) {
 	params := strings.Split(b.Name(), "/")
-	testIdx, err := strconv.ParseInt(params[1], 10, 64)
 	dataLengthParam, err := strconv.ParseInt(params[2], 10, 64)
 	if err != nil {
 		b.Fatal(err)
 	}
-	i := int(testIdx)
 	dataLength := int(dataLengthParam)
 
 	poolSync := bmt.NewTreePool(sha3.NewLegacyKeccak256, branches, bmt.PoolSize)
@@ -658,12 +656,7 @@ func benchmarkVector(b *testing.B) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*1000)
 		defer cancel()
 		select {
-		case ref := <-tgt.Done():
-			refCorrectHex := "0x" + expected[i]
-			refHex := hexutil.Encode(ref)
-			if refHex != refCorrectHex {
-				b.Fatalf("writespan sequential %d/%d: expected %s, got %s", i, dataLength, refCorrectHex, refHex)
-			}
+		case <-tgt.Done():
 		case <-ctx.Done():
 			b.Fatalf("timeout: %v", ctx.Err())
 		}
