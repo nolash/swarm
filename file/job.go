@@ -128,11 +128,12 @@ type job struct {
 	params *treeParams
 	index  *jobIndex
 
-	level           int   // level in tree
-	dataSection     int   // data section index
-	cursorSection   int32 // next write position in job
-	endCount        int32 // number of writes to be written to this job (0 means write to capacity)
-	lastSectionSize int   // data size on the last data section write
+	level            int    // level in tree
+	dataSection      int    // data section index
+	cursorSection    int32  // next write position in job
+	endCount         int32  // number of writes to be written to this job (0 means write to capacity)
+	lastSectionSize  int    // data size on the last data section write
+	firstSectionData []byte // store first section of data written to solve the dangling chunk edge case
 
 	writeC chan jobUnit
 	writer bmt.SectionWriter // underlying data processor
@@ -226,6 +227,9 @@ OUTER:
 
 		// enter here if new data is written to the job
 		case entry := <-jb.writeC:
+			if entry.index == 0 {
+				jb.firstSectionData = entry.data
+			}
 			newCount := jb.inc()
 			log.Trace("job write", "datasection", jb.dataSection, "level", jb.level, "count", jb.count(), "index", entry.index, "data", hexutil.Encode(entry.data))
 			// this write is superfluous when the received data is the root hash
@@ -290,14 +294,30 @@ OUTER:
 
 	// endCount > 0 means this is the last chunk on the level
 	// the hash from the level below the target level will be the result
-	if endCount > 0 && int(jb.target.level-1) == jb.level {
+	belowRootLevel := int(jb.target.level) - 1
+	if endCount > 0 && jb.level == belowRootLevel {
 		jb.target.resultC <- ref
 		return
 	}
 
 	// retrieve the parent and the corresponding section in it to write to
 	parent := jb.parent()
-	parentSection := dataSectionToLevelSection(jb.params, jb.level+1, jb.dataSection)
+	nextLevel := jb.level + 1
+	parentSection := dataSectionToLevelSection(jb.params, nextLevel, jb.dataSection)
+
+	// in the event that we have a balanced tree and a chunk with single reference below the target level
+	// we move the single reference up to the penultimate level
+	if endCount == 1 {
+		ref = jb.firstSectionData
+		for parent.level < belowRootLevel {
+			log.Trace("parent write skip", "level", parent.level)
+			oldParent := parent
+			parent = parent.parent()
+			oldParent.destroy()
+			nextLevel += 1
+			parentSection = dataSectionToLevelSection(jb.params, nextLevel, jb.dataSection)
+		}
+	}
 	parent.write(parentSection, ref)
 
 }

@@ -587,7 +587,7 @@ func TestVectors(t *testing.T) {
 			refCorrectHex := "0x" + expected[i]
 			refHex := hexutil.Encode(ref)
 			if refHex != refCorrectHex {
-				t.Fatalf("writespan sequential: expected %s, got %s", refCorrectHex, refHex)
+				t.Fatalf("writespan sequential %d/%d: expected %s, got %s", i, dataLength, refCorrectHex, refHex)
 			}
 		case <-ctx.Done():
 			t.Fatalf("timeout: %v", ctx.Err())
@@ -662,7 +662,7 @@ func benchmarkVector(b *testing.B) {
 			refCorrectHex := "0x" + expected[i]
 			refHex := hexutil.Encode(ref)
 			if refHex != refCorrectHex {
-				b.Fatalf("writespan sequential: expected %s, got %s", refCorrectHex, refHex)
+				b.Fatalf("writespan sequential %d/%d: expected %s, got %s", i, dataLength, refCorrectHex, refHex)
 			}
 		case <-ctx.Done():
 			b.Fatalf("timeout: %v", ctx.Err())
