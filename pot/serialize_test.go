@@ -137,9 +137,9 @@ func TestSerializeTwo(t *testing.T) {
 	}
 
 	correct := make([]byte, 32+(32-2)+(32-3)+2-1)
-	correct[32] = byte(23)      // the po follow right after the root pin
+	correct[32] = byte(30)      // the po follow right after the root pin
 	correct[33] = 0x80          // this is the bit from the first fork
-	correct[32+(32-3)] = 0x03   // is now shifted 6, po for second member is 13, 13 0x000d shifted 6 is 0x0340 (first byte 03 because the data in last byte of first member is 0x00)
+	correct[32+(32-3)] = 0x05   // is now shifted 6, po for second member is 21, 21 0x0015 shifted 6 is 0x0540 (first byte 03 because the data in last byte of first member is 0x00)
 	correct[32+(32-3)+1] = 0x60 // the second byte of the po is packed with the bit in the second fork; 0100 0000 -> 0110 0000
 	if !bytes.Equal(s, correct) {
 		t.Fatalf("serialize two - zeros after fork; expected %x, got %x", correct, s)

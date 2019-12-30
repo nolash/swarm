@@ -21,10 +21,15 @@ func (d *dumper) MarshalBinary() ([]byte, error) {
 	b = append(b, ToBytes(d.p.pin)...)
 	for i := len(d.p.bins) - 1; i > -1; i-- {
 		sp := d.p.bins[i]
-		d.pos = (d.pos + sp.po) % 8
 		log.Trace("marshal", "po", sp.po, "pos", d.pos)
-		b = append(b, byte(sp.po))
-		b = append(b, poTruncate(ToBytes(sp.pin), sp.po, 0)...)
+		if d.pos == 0 {
+			b = append(b, byte(sp.po))
+		} else {
+			b[len(b)-1] |= byte(sp.po) >> d.pos
+			b = append(b, byte(sp.po)<<(8-d.pos))
+		}
+		b = append(b, poTruncate(ToBytes(sp.pin), sp.po, d.pos)...)
+		d.pos = (d.pos + sp.po) % 8
 	}
 	return b, nil
 }
