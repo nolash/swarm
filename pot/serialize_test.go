@@ -25,18 +25,32 @@ func TestSerializePackAddress(t *testing.T) {
 	c := []byte{0x81}
 	bp := poTruncate(b, 8, 0)
 	if !bytes.Equal(bp, c) {
-		t.Fatalf("packaddress; expected %x, got %x", c, bp)
+		t.Fatalf("packaddress 8/0; expected %x, got %x", c, bp)
 	}
 	c = []byte{0xf0, 0x20}
 	bp = poTruncate(b, 5, 0)
 	if !bytes.Equal(bp, c) {
-		t.Fatalf("packaddress; expected %x, got %x", c, bp)
+		t.Fatalf("packaddress 5/0; expected %x, got %x", c, bp)
 	}
 	b = []byte{0xab, 0x07, 0x81}
 	c = []byte{0xf0, 0x20}
 	bp = poTruncate(b, 13, 0)
 	if !bytes.Equal(bp, c) {
-		t.Fatalf("packaddress; expected %x, got %x", c, bp)
+		t.Fatalf("packaddress 13/0; expected %x, got %x", c, bp)
+	}
+
+	b = []byte{0xab, 0x07, 0x81}
+	c = []byte{0x07, 0x81}
+	bp = poTruncate(b, 13, 5)
+	if !bytes.Equal(bp, c) {
+		t.Fatalf("packaddress 13/5; expected %x, got %x", c, bp)
+	}
+
+	b = []byte{0xab, 0x07, 0x81} // 0000 0111 1000 0001
+	c = []byte{0x00, 0x3c, 0x08} // 0000 0000 0011 1100 0000 1000
+	bp = poTruncate(b, 8, 5)
+	if !bytes.Equal(bp, c) {
+		t.Fatalf("packaddress 8/5; expected %x, got %x", c, bp)
 	}
 }
 

@@ -38,30 +38,36 @@ func poTruncate(b []byte, po int, offset int) []byte {
 	if pos == 0 && offset == 0 {
 		return bsrc
 	}
-	log.Trace("bsrc", "x", fmt.Sprintf("%x", bsrc), "pos", pos, "byt", byt)
-	bdst := make([]byte, len(bsrc))
+	var bdst []byte
 	shf := offset - pos
-	if shf < 0 {
+	log.Trace("bsrc", "x", fmt.Sprintf("%x", bsrc), "pos", pos, "byt", byt, "shf", shf)
+	if shf <= 0 {
+		bdst = make([]byte, len(bsrc))
 		shf *= -1
 		for i := 0; i < len(bsrc)-1; i++ {
 			bdst[i] = (bsrc[i] << shf) & 0xff
-			log.Trace("bdst", "i", i, "b", fmt.Sprintf("%x", bdst))
+			log.Trace("bdst before", "i", i, "b", fmt.Sprintf("%x", bdst))
 			nx := bsrc[i+1] >> (8 - shf)
 			bdst[i] |= nx & 0xff
-			log.Trace("bdst", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
+			log.Trace("bdst after", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
 		}
+
+		ls := bsrc[len(bsrc)-1]
+		bdst[len(bdst)-1] = ls << shf & 0xff
+		log.Trace("bdst", "b", fmt.Sprintf("%x", bdst), "ls", ls)
 	} else {
-		for i := 0; i < len(bsrc)-1; i++ {
-			bdst[i] = (bsrc[i] >> shf) & 0xff
-			log.Trace("bdst", "i", i, "b", fmt.Sprintf("%x", bdst))
-			nx := bsrc[i+1] << (8 - shf)
-			bdst[i] |= nx & 0xff
-			log.Trace("bdst", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
+		bdst = make([]byte, len(bsrc)+1)
+		for i := 0; i < len(bsrc); i++ {
+			bdst[i] |= (bsrc[i] >> shf) & 0xff
+			log.Trace("bdst before", "i", i, "b", fmt.Sprintf("%x", bdst))
+			nx := bsrc[i] << (8 - shf)
+			bdst[i+1] |= nx & 0xff
+			log.Trace("bdst after", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
 		}
+		//ls := bsrc[len(bsrc)-1]
+		//bdst[len(bdst)-1] = ls >> shf & 0xff
+		//log.Trace("bdst", "b", fmt.Sprintf("%x", bdst), "ls", ls)
 	}
-	ls := bsrc[len(bsrc)-1]
-	bdst[len(bdst)-1] = ls << pos & 0xff
-	log.Trace("bdst", "b", fmt.Sprintf("%x", bdst), "ls", ls)
 	return bdst
 }
 
