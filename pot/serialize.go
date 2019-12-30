@@ -20,6 +20,7 @@ func (d *dumper) MarshalBinary() ([]byte, error) {
 	b = append(b, ToBytes(d.p.pin)...)
 	for i := len(d.p.bins) - 1; i > -1; i-- {
 		sp := d.p.bins[i]
+		b = append(b, byte(sp.po))
 		b = append(b, poTruncate(ToBytes(sp.pin), sp.po)...)
 	}
 	return b, nil

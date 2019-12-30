@@ -52,17 +52,19 @@ func TestSerializeSingle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fragment := append(a, b[10:]...)
-	if !bytes.Equal(s, fragment) {
-		t.Fatalf("prefix match; expected %x, got %x", fragment, s)
+	correct := append(a, byte(80))
+	correct = append(correct, b[10:]...)
+	if !bytes.Equal(s, correct) {
+		t.Fatalf("prefix match; expected %x, got %x", correct, s)
 	}
 
 	b[10] = 0x04
 	p = NewPot(a, 0)
 	p, _, _ = Add(p, b, pof)
 
-	correct := make([]byte, 32+22)
-	correct[32] = 0x80
+	correct = make([]byte, 32+23)
+	correct[32] = byte(85)
+	correct[33] = 0x80
 	d = newDumper(p)
 	s, err = d.MarshalBinary()
 	if err != nil {
