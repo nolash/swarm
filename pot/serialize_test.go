@@ -23,18 +23,18 @@ func TestSerializeFindBitByte(t *testing.T) {
 func TestSerializePackAddress(t *testing.T) {
 	b := []byte{0x07, 0x81}
 	c := []byte{0x81}
-	bp := poTruncate(b, 8)
+	bp := poTruncate(b, 8, 0)
 	if !bytes.Equal(bp, c) {
 		t.Fatalf("packaddress; expected %x, got %x", c, bp)
 	}
 	c = []byte{0xf0, 0x20}
-	bp = poTruncate(b, 5)
+	bp = poTruncate(b, 5, 0)
 	if !bytes.Equal(bp, c) {
 		t.Fatalf("packaddress; expected %x, got %x", c, bp)
 	}
 	b = []byte{0xab, 0x07, 0x81}
 	c = []byte{0xf0, 0x20}
-	bp = poTruncate(b, 13)
+	bp = poTruncate(b, 13, 0)
 	if !bytes.Equal(bp, c) {
 		t.Fatalf("packaddress; expected %x, got %x", c, bp)
 	}

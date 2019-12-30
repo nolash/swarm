@@ -21,7 +21,7 @@ func (d *dumper) MarshalBinary() ([]byte, error) {
 	for i := len(d.p.bins) - 1; i > -1; i-- {
 		sp := d.p.bins[i]
 		b = append(b, byte(sp.po))
-		b = append(b, poTruncate(ToBytes(sp.pin), sp.po)...)
+		b = append(b, poTruncate(ToBytes(sp.pin), sp.po, 0)...)
 	}
 	return b, nil
 }
@@ -32,20 +32,32 @@ func newDumper(p *Pot) *dumper {
 	}
 }
 
-func poTruncate(b []byte, po int) []byte {
+func poTruncate(b []byte, po int, offset int) []byte {
 	byt, pos := bitByte(po)
 	bsrc := b[byt:]
-	if pos == 0 {
+	if pos == 0 && offset == 0 {
 		return bsrc
 	}
 	log.Trace("bsrc", "x", fmt.Sprintf("%x", bsrc), "pos", pos, "byt", byt)
 	bdst := make([]byte, len(bsrc))
-	for i := 0; i < len(bsrc)-1; i++ {
-		bdst[i] = (bsrc[i] << pos) & 0xff
-		log.Trace("bdst", "i", i, "b", fmt.Sprintf("%x", bdst))
-		nx := bsrc[i+1] >> (8 - pos)
-		bdst[i] |= nx & 0xff
-		log.Trace("bdst", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
+	shf := offset - pos
+	if shf < 0 {
+		shf *= -1
+		for i := 0; i < len(bsrc)-1; i++ {
+			bdst[i] = (bsrc[i] << shf) & 0xff
+			log.Trace("bdst", "i", i, "b", fmt.Sprintf("%x", bdst))
+			nx := bsrc[i+1] >> (8 - shf)
+			bdst[i] |= nx & 0xff
+			log.Trace("bdst", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
+		}
+	} else {
+		for i := 0; i < len(bsrc)-1; i++ {
+			bdst[i] = (bsrc[i] >> shf) & 0xff
+			log.Trace("bdst", "i", i, "b", fmt.Sprintf("%x", bdst))
+			nx := bsrc[i+1] << (8 - shf)
+			bdst[i] |= nx & 0xff
+			log.Trace("bdst", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
+		}
 	}
 	ls := bsrc[len(bsrc)-1]
 	bdst[len(bdst)-1] = ls << pos & 0xff
