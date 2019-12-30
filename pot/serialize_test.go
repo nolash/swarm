@@ -3,6 +3,8 @@ package pot
 import (
 	"bytes"
 	"testing"
+
+	"github.com/ethersphere/swarm/log"
 )
 
 func TestSerializeFindBitByte(t *testing.T) {
@@ -86,5 +88,60 @@ func TestSerializeSingle(t *testing.T) {
 	}
 	if !bytes.Equal(s, correct) {
 		t.Fatalf("prefix match; expected %x, got %x", correct, s)
+	}
+}
+
+func TestSerializeDumperPos(t *testing.T) {
+	pof := DefaultPof(255)
+	a := make([]byte, 32)
+	b := make([]byte, 32)
+	c := make([]byte, 32)
+	b[3] = 0x02
+	c[2] = 0x04
+	p := NewPot(a, 0)
+	p, _, _ = Add(p, b, pof)
+	d := newDumper(p)
+	d.MarshalBinary()
+	po := (3 * 8) + 6
+	pos := po % 8
+	if d.pos != pos {
+		t.Fatalf("dumper pos after one child at 0x00000002 (%d); expected pos %d, got %d", po, pos, d.pos)
+	}
+	log.Trace("pos", "p", pos)
+
+	p, _, _ = Add(p, c, pof)
+	d = newDumper(p)
+	d.MarshalBinary()
+	po = (2 * 8) + 5
+	pos = (pos + po) % 8
+	log.Trace("pos", "p", pos)
+	if d.pos != pos {
+		t.Fatalf("dumper pos after second child at 0x000004 (%d); expected pos %d, got %d", po, pos, d.pos)
+	}
+}
+
+func TestSerializeTwo(t *testing.T) {
+	pof := DefaultPof(255)
+	a := make([]byte, 32)
+	b := make([]byte, 32)
+	c := make([]byte, 32)
+	b[3] = 0x02
+	c[2] = 0x04
+	p := NewPot(a, 0)
+	p, _, _ = Add(p, b, pof)
+	p, _, _ = Add(p, c, pof)
+	d := newDumper(p)
+	s, err := d.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	correct := make([]byte, 32+(32-2)+(32-3)+2-1)
+	correct[32] = byte(23)      // the po follow right after the root pin
+	correct[33] = 0x80          // this is the bit from the first fork
+	correct[32+(32-3)] = 0x03   // is now shifted 6, po for second member is 13, 13 0x000d shifted 6 is 0x0340 (first byte 03 because the data in last byte of first member is 0x00)
+	correct[32+(32-3)+1] = 0x60 // the second byte of the po is packed with the bit in the second fork; 0100 0000 -> 0110 0000
+	if !bytes.Equal(s, correct) {
+		t.Fatalf("serialize two - zeros after fork; expected %x, got %x", correct, s)
 	}
 }
