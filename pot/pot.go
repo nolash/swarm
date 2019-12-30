@@ -1008,3 +1008,12 @@ func (t *Pot) BiggestAddressGap() (po int, val Val) {
 
 	return biggest, wrt
 }
+
+func (t *Pot) Dump() {
+	fmt.Printf("# %p %d (%d) %d\n", t, t.size, len(t.bins), t.po)
+	fmt.Printf("%v\n", t.pin)
+	for i, bn := range t.bins {
+		fmt.Printf("# bin %d\n", i)
+		bn.Dump()
+	}
+}
