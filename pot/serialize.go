@@ -28,7 +28,8 @@ func (d *dumper) MarshalBinary() ([]byte, error) {
 		} else { // attach the next po across the byte boundary
 			b[len(b)-1] |= byte(sp.po) >> (8 - d.pos)
 			b = append(b, byte(sp.po)<<d.pos)
-			bn := poTruncate(ToBytes(sp.pin), sp.po, (sp.po+d.pos-1)%8)
+			//bn := poTruncate(ToBytes(sp.pin), sp.po, ((sp.po + d.pos) % 8))
+			bn := poTruncate(ToBytes(sp.pin), sp.po, d.pos)
 			b[len(b)-1] |= bn[0]
 			if len(bn) > 1 {
 				b = append(b, bn[1:]...)
@@ -45,6 +46,8 @@ func newDumper(p *Pot) *dumper {
 	}
 }
 
+// returns the byte slice left-shifted to the order of po and right-shifted to the order of offset
+// offset should be a value within a single byte offset. If offset>7, result is undefined
 func poTruncate(b []byte, po int, offset int) []byte {
 	byt, pos := bitByte(po)
 	bsrc := b[byt:]

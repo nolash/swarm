@@ -91,33 +91,78 @@ func TestSerializeSingle(t *testing.T) {
 	}
 }
 
+func TestSerializeBoundary(t *testing.T) {
+	pof := DefaultPof(255)
+	a := make([]byte, 32)
+	b := make([]byte, 32)
+	c := make([]byte, 32)
+	d := make([]byte, 32)
+
+	b[3] = 0x80
+	c[2] = 0x80
+	d[1] = 0x80
+	p := NewPot(a, 0)
+	p, _, _ = Add(p, b, pof)
+	p, _, _ = Add(p, c, pof)
+	p, _, _ = Add(p, d, pof)
+	dm := newDumper(p)
+	s, err := dm.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	correct := make([]byte, 32+31+30+29+3)
+	correct[32] = byte(8 * 3) // the po follow right after the root pin
+	correct[32+1] = 0x80
+	correct[32+1+29] = byte(8 * 2)
+	correct[32+1+29+1] = 0x80
+	correct[32+1+29+1+30] = byte(8)
+	correct[32+1+29+1+30+1] = 0x80
+	if !bytes.Equal(s, correct) {
+		t.Fatalf("serialize boundary - zeros after fork; expected %x, got %x", correct, s)
+	}
+}
+
 func TestSerializeDumperPos(t *testing.T) {
 	pof := DefaultPof(255)
 	a := make([]byte, 32)
 	b := make([]byte, 32)
 	c := make([]byte, 32)
+	d := make([]byte, 32)
 	b[3] = 0x02
 	c[2] = 0x04
+	d[1] = 0x08
 	p := NewPot(a, 0)
 	p, _, _ = Add(p, b, pof)
-	d := newDumper(p)
-	d.MarshalBinary()
+	dm := newDumper(p)
+	dm.MarshalBinary()
 	po := (3 * 8) + 6
 	pos := po % 8
-	if d.pos != pos {
-		t.Fatalf("dumper pos after one child at 0x00000002 (%d); expected pos %d, got %d", po, pos, d.pos)
+	if dm.pos != pos {
+		t.Fatalf("dumper pos after one child at 0x00000002 (%d); expected pos %d, got %d", po, pos, dm.pos)
 	}
 	log.Trace("pos", "p", pos)
 
 	p, _, _ = Add(p, c, pof)
-	d = newDumper(p)
-	d.MarshalBinary()
+	dm = newDumper(p)
+	dm.MarshalBinary()
 	po = (2 * 8) + 5
 	pos = (pos + po) % 8
 	log.Trace("pos", "p", pos)
-	if d.pos != pos {
-		t.Fatalf("dumper pos after second child at 0x000004 (%d); expected pos %d, got %d", po, pos, d.pos)
+	if dm.pos != pos {
+		t.Fatalf("dumper pos after second child at 0x000004 (%d); expected pos %d, got %d", po, pos, dm.pos)
 	}
+
+	p, _, _ = Add(p, d, pof)
+	dm = newDumper(p)
+	dm.MarshalBinary()
+	po = (1 * 8) + 4
+	pos = (pos + po) % 8
+	log.Trace("pos", "p", pos)
+	if dm.pos != pos {
+		t.Fatalf("dumper pos after third child at 0x0008 (%d); expected pos %d, got %d", po, pos, dm.pos)
+	}
+
 }
 
 func TestSerializeTwo(t *testing.T) {
@@ -144,5 +189,38 @@ func TestSerializeTwo(t *testing.T) {
 	correct[33+(32-1-3)+1] = 0x60 // the second byte of the po is packed with the bit in the second fork; 0100 0000 -> 0110 0000
 	if !bytes.Equal(s, correct) {
 		t.Fatalf("serialize two - zeros after fork; expected %x, got %x", correct, s)
+	}
+}
+
+func TestSerializeMore(t *testing.T) {
+	pof := DefaultPof(255)
+	a := make([]byte, 32)
+	b := make([]byte, 32)
+	c := make([]byte, 32)
+	d := make([]byte, 32)
+
+	b[3] = 0x02
+	c[2] = 0x04
+	d[1] = 0x08
+	p := NewPot(a, 0)
+	p, _, _ = Add(p, b, pof)
+	p, _, _ = Add(p, c, pof)
+	p, _, _ = Add(p, d, pof)
+	dm := newDumper(p)
+	s, err := dm.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	po := (3 * 8) + 6
+	correct := make([]byte, 32+(32-2)+(32-3)+(32-1)+3-1)
+	correct[32] = byte(po)                  // the po follow right after the root pin
+	correct[33] = 0x80                      // this is the bit from the first fork
+	correct[33+(32-1-3)] = 0x05             // is now shifted 6, po for second member is 21, 21 0x0015 shifted 6 is 0x0540 (first byte 03 because the data in last byte of first member is 0x00)
+	correct[33+(32-1-3)+1] = 0x60           // the second byte of the po is packed with the bit in the second fork; 0100 0000 -> 0110 0000
+	correct[33+(32-1-3)+(32-1-2)+2] = 0x60  // is now shifted 6+5 = 11, po for third member is 12, 12 0x000c, shifted 11 is 0x6000
+	correct[33+(32-1-3)+(32-1-2)+2] |= 0x04 // the boundary is on the second bit of the second nibble; 0x0c = 0000 1100;  [0]000 0110 0[100], which should result in 0x64
+	if !bytes.Equal(s, correct) {
+		t.Fatalf("serialize more - zeros after fork; expected %x, got %x", correct, s)
 	}
 }
