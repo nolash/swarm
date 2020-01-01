@@ -62,12 +62,22 @@ func poShift(b []byte, po int, offset int) []byte {
 	//if shf < 0 {
 	bdst = make([]byte, len(bsrc))
 	//shf *= -1
-	for i := 0; i < len(bsrc)-1; i++ {
-		bdst[i] = (bsrc[i] << shf) & 0xff
-		log.Trace("bdst shf- before", "i", i, "b", fmt.Sprintf("%x", bdst))
-		nx := bsrc[i+1] >> (8 - shf)
-		bdst[i] |= nx & 0xff
-		log.Trace("bdst shf- after", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
+	if shf <= pos {
+		for i := 0; i < len(bsrc)-1; i++ {
+			log.Trace("bdst shf- before", "i", i, "b", fmt.Sprintf("%x", bdst))
+			bdst[i] = (bsrc[i] << shf) & 0xff
+			nx := bsrc[i+1] >> (8 - shf)
+			bdst[i] |= nx & 0xff
+			log.Trace("bdst shf- after", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
+		}
+	} else {
+		for i := 0; i < len(bsrc)-1; i++ {
+			log.Trace("bdst shf+ before", "i", i, "b", fmt.Sprintf("%x", bdst))
+			bdst[i] = (bsrc[i] >> (8 - shf)) & 0xff
+			nx := bsrc[i+1] << shf
+			bdst[i] |= nx & 0xff
+			log.Trace("bdst shf+ after", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
+		}
 	}
 
 	ls := bsrc[len(bsrc)-1]

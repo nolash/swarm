@@ -58,18 +58,10 @@ func TestSerializePackAddress(t *testing.T) {
 
 	b = []byte{0xab, 0x07, 0x81}
 	c = []byte{0x1e, 0x04}
-	//bp = poShift(b, 13, 5)
 	bp = poShift(b, 13, 5)
 	if !bytes.Equal(bp, c) {
 		t.Fatalf("packaddress 13/5; expected %x, got %x", c, bp)
 	}
-	//
-	//	b = []byte{0xab, 0x07, 0x81} // 0000 0111 1000 0001
-	//	c = []byte{0x00, 0x3c, 0x08} // 0000 0000 0011 1100 0000 1000
-	//	bp = poShift(b, 8, 5)
-	//	if !bytes.Equal(bp, c) {
-	//		t.Fatalf("packaddress 8/5; expected %x, got %x", c, bp)
-	//	}
 }
 
 func TestSerializeSingle(t *testing.T) {
@@ -216,37 +208,48 @@ func TestSerializeTwo(t *testing.T) {
 	if !bytes.Equal(s, correct) {
 		t.Fatalf("serialize two - zeros after fork; expected %x, got %x", correct, s)
 	}
+	t.Logf("result: %x", s)
 }
 
-//func TestSerializeMore(t *testing.T) {
-//	pof := DefaultPof(255)
-//	a := make([]byte, 32)
-//	b := make([]byte, 32)
-//	c := make([]byte, 32)
-//	d := make([]byte, 32)
-//
-//	b[3] = 0x02
-//	c[2] = 0x04
-//	d[1] = 0x08
-//	p := NewPot(a, 0)
-//	p, _, _ = Add(p, b, pof)
-//	p, _, _ = Add(p, c, pof)
-//	p, _, _ = Add(p, d, pof)
-//	dm := newDumper(p)
-//	s, err := dm.MarshalBinary()
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	po := (3 * 8) + 6
-//	correct := make([]byte, 32+(32-2)+(32-3)+(32-1)+3-1)
-//	correct[32] = byte(po)                  // the po follow right after the root pin
-//	correct[33] = 0x80                      // this is the bit from the first fork
-//	correct[33+(32-1-3)] = 0x05             // is now shifted 6, po for second member is 21, 21 0x0015 shifted 6 is 0x0540 (first byte 03 because the data in last byte of first member is 0x00)
-//	correct[33+(32-1-3)+1] = 0x60           // the second byte of the po is packed with the bit in the second fork; 0100 0000 -> 0110 0000
-//	correct[33+(32-1-3)+(32-1-2)+2] = 0x60  // is now shifted 6+5 = 11, po for third member is 12, 12 0x000c, shifted 11 is 0x6000
-//	correct[33+(32-1-3)+(32-1-2)+2] |= 0x04 // the boundary is on the second bit of the second nibble; 0x0c = 0000 1100;  [0]000 0110 0[100], which should result in 0x64
-//	if !bytes.Equal(s, correct) {
-//		t.Fatalf("serialize more - zeros after fork; expected %x, got %x", correct, s)
-//	}
-//}
+func TestSerializeMore(t *testing.T) {
+	pof := DefaultPof(255)
+	a := make([]byte, 3)
+	b := make([]byte, 3)
+	c := make([]byte, 3)
+	d := make([]byte, 3)
+
+	b[2] = 0x02
+	c[1] = 0x04
+	d[1] = 0x80
+	p := NewPot(a, 0)
+	p, pob, _ := Add(p, b, pof)
+	p, poc, _ := Add(p, c, pof)
+	p, pod, _ := Add(p, d, pof)
+	dm := newDumper(p)
+	s, err := dm.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Trace("correct calc")
+
+	correct := make([]byte, len(a)+3+1+2+3-2)
+	crsr := 3                 // after root pin data
+	po := (pob % 8)           // shift position of first fork
+	correct[crsr] = byte(pob) // the po follow right after the root pin on byte boundary
+	crsr += 1
+	correct[crsr] = b[2] << po // shifts the bit from the first fork in place
+
+	poBytes := poShift([]byte{0x00, byte(poc)}, po, 0) // the next po prefix spans across byte boundary according to po of b
+	correct[crsr] |= poBytes[0]                        // the data of b is 2 bits, so we mask from the same byte
+	crsr += 1
+	correct[crsr] |= poBytes[1] // 0000 1101 -> 1000 0011 0100 0000, shifted 6, first bit is first fork bit
+
+	po = (po + poc) % 8         // the shift is now the sum of b po and c po
+	correct[crsr] |= c[1] << po // shift the c data in place
+
+	_ = pod
+	if !bytes.Equal(s, correct) {
+		t.Fatalf("serialize two - zeros after fork; expected %x, got %x", correct, s)
+	}
+
+}
