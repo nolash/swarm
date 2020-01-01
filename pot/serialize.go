@@ -24,12 +24,14 @@ func (d *dumper) MarshalBinary() ([]byte, error) {
 		log.Trace("marshal", "po", sp.po, "pos", d.pos)
 		if d.pos == 0 {
 			b = append(b, byte(sp.po))
-			b = append(b, poTruncate(ToBytes(sp.pin), sp.po, d.pos)...)
+			b = append(b, poShift(ToBytes(sp.pin), sp.po, d.pos)...) //, d.pos)...)
 		} else { // attach the next po across the byte boundary
-			b[len(b)-1] |= byte(sp.po) >> (8 - d.pos)
-			b = append(b, byte(sp.po)<<d.pos)
-			//bn := poTruncate(ToBytes(sp.pin), sp.po, ((sp.po + d.pos) % 8))
-			bn := poTruncate(ToBytes(sp.pin), sp.po, d.pos)
+			poBytes := poShift([]byte{0x00, byte(sp.po)}, d.pos, 0)
+			log.Trace("marshal pobytes", "pobytes", fmt.Sprintf("%x", poBytes))
+			b[len(b)-1] |= poBytes[0]
+			b = append(b, poBytes[1])
+			bn := poShift(ToBytes(sp.pin), sp.po, d.pos) //, d.pos)
+			log.Trace("marshal shifted", "res", fmt.Sprintf("%x", bn), "src", fmt.Sprintf("%x", ToBytes(sp.pin)), "b", fmt.Sprintf("%x", b))
 			b[len(b)-1] |= bn[0]
 			if len(bn) > 1 {
 				b = append(b, bn[1:]...)
@@ -48,39 +50,29 @@ func newDumper(p *Pot) *dumper {
 
 // returns the byte slice left-shifted to the order of po and right-shifted to the order of offset
 // offset should be a value within a single byte offset. If offset>7, result is undefined
-func poTruncate(b []byte, po int, offset int) []byte {
+func poShift(b []byte, po int, offset int) []byte {
 	byt, pos := bitByte(po)
 	bsrc := b[byt:]
 	if pos == 0 && offset == 0 {
 		return bsrc
 	}
 	var bdst []byte
-	shf := offset - pos
-	log.Trace("bsrc", "x", fmt.Sprintf("%x", bsrc), "pos", pos, "byt", byt, "shf", shf)
-	if shf <= 0 {
-		bdst = make([]byte, len(bsrc))
-		shf *= -1
-		for i := 0; i < len(bsrc)-1; i++ {
-			bdst[i] = (bsrc[i] << shf) & 0xff
-			log.Trace("bdst before", "i", i, "b", fmt.Sprintf("%x", bdst))
-			nx := bsrc[i+1] >> (8 - shf)
-			bdst[i] |= nx & 0xff
-			log.Trace("bdst after", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
-		}
-
-		ls := bsrc[len(bsrc)-1]
-		bdst[len(bdst)-1] = ls << shf & 0xff
-		log.Trace("bdst", "b", fmt.Sprintf("%x", bdst), "ls", ls)
-	} else {
-		bdst = make([]byte, len(bsrc)+1)
-		for i := 0; i < len(bsrc); i++ {
-			bdst[i] |= (bsrc[i] >> shf) & 0xff
-			log.Trace("bdst before", "i", i, "b", fmt.Sprintf("%x", bdst))
-			nx := bsrc[i] << (8 - shf)
-			bdst[i+1] |= nx & 0xff
-			log.Trace("bdst after", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
-		}
+	shf := (offset + pos) % 8
+	log.Trace("bsrc", "x", fmt.Sprintf("%x", bsrc), "pos", pos, "byt", byt, "shf", shf, "offset", offset)
+	//if shf < 0 {
+	bdst = make([]byte, len(bsrc))
+	//shf *= -1
+	for i := 0; i < len(bsrc)-1; i++ {
+		bdst[i] = (bsrc[i] << shf) & 0xff
+		log.Trace("bdst shf- before", "i", i, "b", fmt.Sprintf("%x", bdst))
+		nx := bsrc[i+1] >> (8 - shf)
+		bdst[i] |= nx & 0xff
+		log.Trace("bdst shf- after", "i", i, "b", fmt.Sprintf("%x", bdst), "nx", nx)
 	}
+
+	ls := bsrc[len(bsrc)-1]
+	bdst[len(bdst)-1] = ls << shf & 0xff
+	log.Trace("bdst", "b", fmt.Sprintf("%x", bdst), "ls", ls)
 	return bdst
 }
 
