@@ -251,5 +251,4 @@ func TestSerializeMore(t *testing.T) {
 	if !bytes.Equal(s, correct) {
 		t.Fatalf("serialize two - zeros after fork; expected %x, got %x", correct, s)
 	}
-
 }

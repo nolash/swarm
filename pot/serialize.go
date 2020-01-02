@@ -59,9 +59,7 @@ func poShift(b []byte, po int, offset int) []byte {
 	var bdst []byte
 	shf := (offset + pos) % 8
 	log.Trace("bsrc", "x", fmt.Sprintf("%x", bsrc), "pos", pos, "byt", byt, "shf", shf, "offset", offset)
-	//if shf < 0 {
 	bdst = make([]byte, len(bsrc))
-	//shf *= -1
 	if shf <= pos {
 		for i := 0; i < len(bsrc)-1; i++ {
 			log.Trace("bdst shf- before", "i", i, "b", fmt.Sprintf("%x", bdst))
