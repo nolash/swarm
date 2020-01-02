@@ -34,7 +34,7 @@ func (d *dumper) marshalBinary(b []byte) ([]byte, error) {
 			poBytes := poShift([]byte{0x00, byte(sp.po), byte(sp.size)}, d.pos, 0)
 			log.Trace("marshal pobytes", "pobytes", fmt.Sprintf("%x", poBytes))
 			b[len(b)-1] |= poBytes[0]
-			b = append(b, poBytes[1])
+			b = append(b, poBytes[1:]...)
 			bn := poShift(ToBytes(sp.pin), sp.po, d.pos) //, d.pos)
 			log.Trace("marshal shifted", "res", fmt.Sprintf("%x", bn), "src", fmt.Sprintf("%x", ToBytes(sp.pin)), "b", fmt.Sprintf("%x", b))
 			b[len(b)-1] |= bn[0]

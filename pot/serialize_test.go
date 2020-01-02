@@ -204,17 +204,21 @@ func TestSerializeTwo(t *testing.T) {
 	}
 	log.Trace("po", "b", pob, "c", poc)
 
-	correct := make([]byte, len(a)+2+1+2-1) // length of root pin data, two po byte prefixes, 1 byte data for b, 2 bytes data for c, -1 bytes data for total shifts rounded down (6+5=11, 11/8= 1)
-	crsr := 3                               // after root pin data
-	po := (pob % 8)                         // shift position of first fork
-	correct[crsr] = byte(pob)               // the po follow right after the root pin on byte boundary
+	correct := make([]byte, len(a)+2+2+1+2-1) // length of root pin data, two po byte prefixes, two bin length prefixes, 1 byte data for b, 2 bytes data for c, -1 bytes data for total shifts rounded down (6+5=11, 11/8= 1)
+	crsr := 3                                 // after root pin data
+	po := (pob % 8)                           // shift position of first fork
+	correct[crsr] = byte(pob)                 // the po follow right after the root pin on byte boundary
+	crsr += 1
+	correct[crsr] = byte(1) // the po follow right after the root pin on byte boundary
 	crsr += 1
 	correct[crsr] = b[2] << po // shifts the bit from the first fork in place
 
-	poBytes := poShift([]byte{0x00, byte(poc)}, po, 0) // the next po prefix spans across byte boundary according to po of b
-	correct[crsr] |= poBytes[0]                        // the data of b is 2 bits, so we mask from the same byte
+	poBytes := poShift([]byte{0x00, byte(poc), byte(1)}, po, 0) // the next po prefix spans across byte boundary according to po of b
+	correct[crsr] |= poBytes[0]                                 // the data of b is 2 bits, so we mask from the same byte
 	crsr += 1
-	correct[crsr] |= poBytes[1] // 0000 1101 -> 1000 0011 0100 0000, shifted 6, first bit is first fork bit
+	correct[crsr] = poBytes[1] // 0000 1101 -> 1000 0011 0100 0000, shifted 6, first bit is first fork bit
+	crsr += 1
+	correct[crsr] = poBytes[2] // 0000 1101 -> 1000 0011 0100 0000, shifted 6, first bit is first fork bit
 
 	po = (po + poc) % 8         // the shift is now the sum of b po and c po
 	correct[crsr] |= c[1] << po // shift the c data in place
@@ -222,7 +226,6 @@ func TestSerializeTwo(t *testing.T) {
 	if !bytes.Equal(s, correct) {
 		t.Fatalf("serialize two - zeros after fork; expected %x, got %x", correct, s)
 	}
-	t.Logf("result: %x", s)
 }
 
 func TestSerializeMore(t *testing.T) {
@@ -246,17 +249,21 @@ func TestSerializeMore(t *testing.T) {
 	}
 	log.Trace("correct calc")
 
-	correct := make([]byte, len(a)+3+1+2+3-2)
+	correct := make([]byte, len(a)+3+3+1+2+3-2)
 	crsr := 3                 // after root pin data
 	po := (pob % 8)           // shift position of first fork
 	correct[crsr] = byte(pob) // the po follow right after the root pin on byte boundary
 	crsr += 1
+	correct[crsr] = byte(1) // the po follow right after the root pin on byte boundary
+	crsr += 1
 	correct[crsr] = b[2] << po // shifts the bit from the first fork in place
 
-	poBytes := poShift([]byte{0x00, byte(poc)}, po, 0) // the next po prefix spans across byte boundary according to po of b
-	correct[crsr] |= poBytes[0]                        // the data of b is 2 bits, so we mask from the same byte
+	poBytes := poShift([]byte{0x00, byte(poc), byte(1)}, po, 0) // the next po prefix spans across byte boundary according to po of b
+	correct[crsr] |= poBytes[0]                                 // the data of b is 2 bits, so we mask from the same byte
 	crsr += 1
-	correct[crsr] |= poBytes[1] // 0000 1101 -> 1000 0011 0100 0000, shifted 6, first bit is first fork bit
+	correct[crsr] = poBytes[1] // 0000 1101 -> 1000 0011 0100 0000, shifted 6, first bit is first fork bit
+	crsr += 1
+	correct[crsr] = poBytes[2]
 
 	po = (po + poc) % 8         // the shift is now the sum of b po and c po
 	correct[crsr] |= c[1] << po // shift the c data in place
