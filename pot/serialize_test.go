@@ -70,32 +70,34 @@ func TestSerializeSingle(t *testing.T) {
 	b := make([]byte, 32)
 	b[10] = 0x80
 	p := NewPot(a, 0)
-	p, _, _ = Add(p, b, pof)
+	p, pob, _ := Add(p, b, pof)
 	d := newDumper(p)
 	s, err := d.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
 	}
-	correct := append(a, byte(80))
+	correct := append(a, byte(pob))
+	correct = append(correct, byte(1))
 	correct = append(correct, b[10:]...)
 	if !bytes.Equal(s, correct) {
-		t.Fatalf("prefix match; expected %x, got %x", correct, s)
+		t.Fatalf("prefix mismatch 1; expected %x, got %x", correct, s)
 	}
 
 	b[10] = 0x04
 	p = NewPot(a, 0)
-	p, _, _ = Add(p, b, pof)
+	p, pob, _ = Add(p, b, pof)
 
-	correct = make([]byte, 32+23)
-	correct[32] = byte(85)
-	correct[33] = 0x80
+	correct = make([]byte, 32+23+1)
+	correct[32] = byte(pob)
+	correct[33] = 0x01
+	correct[34] = 0x80
 	d = newDumper(p)
 	s, err = d.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(s, correct) {
-		t.Fatalf("prefix match; expected %x, got %x", correct, s)
+		t.Fatalf("prefix mismatch 2; expected %x, got %x", correct, s)
 	}
 }
 
@@ -110,22 +112,34 @@ func TestSerializeBoundary(t *testing.T) {
 	c[2] = 0x80
 	d[1] = 0x80
 	p := NewPot(a, 0)
-	p, _, _ = Add(p, b, pof)
-	p, _, _ = Add(p, c, pof)
-	p, _, _ = Add(p, d, pof)
+	p, pob, _ := Add(p, b, pof)
+	p, poc, _ := Add(p, c, pof)
+	p, pod, _ := Add(p, d, pof)
 	dm := newDumper(p)
 	s, err := dm.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	correct := make([]byte, 32+31+30+29+3)
-	correct[32] = byte(8 * 3) // the po follow right after the root pin
-	correct[32+1] = 0x80
-	correct[32+1+29] = byte(8 * 2)
-	correct[32+1+29+1] = 0x80
-	correct[32+1+29+1+30] = byte(8)
-	correct[32+1+29+1+30+1] = 0x80
+	crsr := 32
+	correct := make([]byte, 32+31+30+29+3+3) // 32 length a, 31 length b, 30 length c, 29 length d, 3 po index bytes, 3 size bytes
+	correct[crsr] = byte(pob)                // the po follow right after the root pin
+	crsr += 1
+	correct[crsr] = byte(1)
+	crsr += 1
+	correct[crsr] = 0x80
+	crsr += 29
+	correct[crsr] = byte(poc)
+	crsr += 1
+	correct[crsr] = byte(1)
+	crsr += 1
+	correct[crsr] = 0x80
+	crsr += 30
+	correct[crsr] = byte(pod)
+	crsr += 1
+	correct[crsr] = byte(1)
+	crsr += 1
+	correct[crsr] = 0x80
 	if !bytes.Equal(s, correct) {
 		t.Fatalf("serialize boundary - zeros after fork; expected %x, got %x", correct, s)
 	}

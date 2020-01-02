@@ -19,14 +19,19 @@ func init() {
 func (d *dumper) MarshalBinary() ([]byte, error) {
 	var b []byte
 	b = append(b, ToBytes(d.p.pin)...)
+	return d.marshalBinary(b)
+}
+
+func (d *dumper) marshalBinary(b []byte) ([]byte, error) {
 	for i := len(d.p.bins) - 1; i > -1; i-- {
 		sp := d.p.bins[i]
 		log.Trace("marshal", "po", sp.po, "pos", d.pos)
 		if d.pos == 0 {
 			b = append(b, byte(sp.po))
+			b = append(b, byte(sp.size))                             // TODO make this a varint
 			b = append(b, poShift(ToBytes(sp.pin), sp.po, d.pos)...) //, d.pos)...)
 		} else { // attach the next po across the byte boundary
-			poBytes := poShift([]byte{0x00, byte(sp.po)}, d.pos, 0)
+			poBytes := poShift([]byte{0x00, byte(sp.po), byte(sp.size)}, d.pos, 0)
 			log.Trace("marshal pobytes", "pobytes", fmt.Sprintf("%x", poBytes))
 			b[len(b)-1] |= poBytes[0]
 			b = append(b, poBytes[1])
