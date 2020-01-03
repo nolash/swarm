@@ -23,6 +23,13 @@ func TestSerializeFindBitByte(t *testing.T) {
 	}
 }
 
+func TestSerializeTailLength(t *testing.T) {
+	l := tailLength(3, 15)
+	if l != 24-15 {
+		t.Fatalf("taillength; expected %d, got %d", 24-15, l)
+	}
+}
+
 //func TestSerializeShiftAcrossBytes(t *testing.T) {
 //	a := byte(0x2a) // 0010 1010
 //	result := shiftAcrossBytes(a, 3)
@@ -250,7 +257,7 @@ func TestSerializeMore(t *testing.T) {
 	}
 	log.Trace("correct calc")
 
-	correct := make([]byte, len(a)+2+2+2+1+1+1)
+	correct := make([]byte, len(a)+2+2+2+1+1+1+1)
 	crsr := 3                 // after root pin data
 	po := (pob % 8)           // shift position of first fork
 	correct[crsr] = byte(pob) // the po follow right after the root pin on byte boundary
@@ -307,7 +314,7 @@ func TestSerializeNested(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	correct := make([]byte, len(a)+2+2+2+1+1)
+	correct := make([]byte, len(a)+2+2+2+1+1+1)
 	crsr := 3
 	po := (pob % 8)
 	correct[crsr] = byte(pob)

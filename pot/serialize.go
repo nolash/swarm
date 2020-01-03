@@ -36,9 +36,14 @@ func (d *dumper) marshalBinary(p *Pot, b []byte) ([]byte, error) {
 			log.Trace("marshal pobytes", "pobytes", fmt.Sprintf("%x", poBytes))
 			b[len(b)-1] |= poBytes[0]
 			b = append(b, poBytes[1:]...)
-			bn := poShift(ToBytes(sp.pin), sp.po, d.pos) //, d.pos)
-			log.Trace("marshal shifted", "res", fmt.Sprintf("%x", bn), "src", fmt.Sprintf("%x", ToBytes(sp.pin)), "b", fmt.Sprintf("%x", b), "lenb", len(b))
+			data := ToBytes(sp.pin)
+			bn := poShift(data, sp.po, d.pos) //, d.pos)
+			tl := tailLength(len(data), sp.po)
+			log.Trace("marshal shifted", "res", fmt.Sprintf("%x", bn), "src", fmt.Sprintf("%x", ToBytes(sp.pin)), "b", fmt.Sprintf("%x", b), "lenb", len(b), "taillength", tl)
 			b[len(b)-1] |= bn[0]
+			for i := len(bn) - 1; i < tl/8; i++ {
+				bn = append(bn, 0x00)
+			}
 			if len(bn) > 1 {
 				b = append(b, bn[1:]...)
 			}
@@ -54,6 +59,10 @@ func (d *dumper) marshalBinary(p *Pot, b []byte) ([]byte, error) {
 		}
 	}
 	return b, nil
+}
+
+func tailLength(l int, po int) int {
+	return l*8 - po
 }
 
 func newDumper(p *Pot) *dumper {
