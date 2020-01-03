@@ -2,6 +2,7 @@ package pot
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/ethersphere/swarm/log"
@@ -249,7 +250,7 @@ func TestSerializeMore(t *testing.T) {
 	}
 	log.Trace("correct calc")
 
-	correct := make([]byte, len(a)+3+3+1+2+3-2)
+	correct := make([]byte, len(a)+2+2+2+1+1+1)
 	crsr := 3                 // after root pin data
 	po := (pob % 8)           // shift position of first fork
 	correct[crsr] = byte(pob) // the po follow right after the root pin on byte boundary
@@ -268,8 +269,80 @@ func TestSerializeMore(t *testing.T) {
 	po = (po + poc) % 8         // the shift is now the sum of b po and c po
 	correct[crsr] |= c[1] << po // shift the c data in place
 
-	_ = pod
+	poBytes = poShift([]byte{0x00, byte(pod), byte(1)}, po, 0) // the next po prefix spans across byte boundary according to po of b
+	crsr += 1
+	correct[crsr] |= poBytes[0] // the data of b is 2 bits, so we mask from the same byte
+	crsr += 1
+	correct[crsr] = poBytes[1] // 0000 1101 -> 1000 0011 0100 0000, shifted 6, first bit is first fork bit
+	crsr += 1
+	correct[crsr] = poBytes[2]
+
+	po = (po + pod) % 8 // the shift is now the sum of b po and c po
+	poBytes = poShift([]byte{0x00, d[1]}, po, 0)
+	correct[crsr] |= poBytes[0]
+
 	if !bytes.Equal(s, correct) {
 		t.Fatalf("serialize two - zeros after fork; expected %x, got %x", correct, s)
 	}
+}
+
+func TestSerializeNested(t *testing.T) {
+	pof := DefaultPof(255)
+	a := make([]byte, 3)
+	b := make([]byte, 3)
+	c := make([]byte, 3)
+	d := make([]byte, 3)
+
+	b[2] = 0x04
+	c[2] = 0x06
+	d[1] = 0x80
+
+	p := NewPot(a, 0)
+	p, pob, _ := Add(p, b, pof)
+	p, _, _ = Add(p, c, pof)
+	p, pod, _ := Add(p, d, pof)
+	dm := newDumper(p)
+	s, err := dm.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	correct := make([]byte, len(a)+2+2+2+1+1)
+	crsr := 3
+	po := (pob % 8)
+	correct[crsr] = byte(pob)
+	crsr += 1
+	correct[crsr] = byte(2)
+	crsr += 1
+	correct[crsr] = b[2] << po
+
+	poc, _ := pof(b, c, 0)
+	poBytes := poShift([]byte{0x00, byte(poc), byte(1)}, po, 0)
+	correct[crsr] |= poBytes[0]
+	crsr += 1
+	correct[crsr] = poBytes[1]
+	crsr += 1
+	correct[crsr] = poBytes[2]
+
+	po = (po + poc) % 8 // the shift is now the sum of b po and c po
+	log.Trace("second po", "Po", po, "correct", fmt.Sprintf("%x", correct))
+	correct[crsr] |= c[2] << po
+	log.Trace("second po", "Po", po, "correct", fmt.Sprintf("%x", correct))
+
+	poBytes = poShift([]byte{0x00, byte(pod), byte(1)}, po, 0)
+	correct[crsr] |= poBytes[0]
+	crsr += 1
+	correct[crsr] = poBytes[1]
+	crsr += 1
+	correct[crsr] = poBytes[2]
+
+	po = (po + pod) % 8 // the shift is now the sum of b po and c po
+	log.Trace("last po", "po", po)
+	poBytes = poShift([]byte{0x00, d[1]}, po, 0)
+	correct[crsr] |= poBytes[0]
+
+	if !bytes.Equal(s, correct) {
+		t.Fatalf("serialize nested - zeros after fork; expected %x, got %x", correct, s)
+	}
+
 }

@@ -19,13 +19,14 @@ func init() {
 func (d *dumper) MarshalBinary() ([]byte, error) {
 	var b []byte
 	b = append(b, ToBytes(d.p.pin)...)
-	return d.marshalBinary(b)
+	return d.marshalBinary(d.p, b)
 }
 
-func (d *dumper) marshalBinary(b []byte) ([]byte, error) {
-	for i := len(d.p.bins) - 1; i > -1; i-- {
-		sp := d.p.bins[i]
-		log.Trace("marshal", "po", sp.po, "pos", d.pos)
+func (d *dumper) marshalBinary(p *Pot, b []byte) ([]byte, error) {
+	for i := len(p.bins) - 1; i > -1; i-- {
+		sp := p.bins[i]
+
+		log.Trace("marshal", "po", sp.po, "pos", d.pos, "size", sp.size, "pot", fmt.Sprintf("%p", sp), "b", fmt.Sprintf("%p", b), "lenb", len(b))
 		if d.pos == 0 {
 			b = append(b, byte(sp.po))
 			b = append(b, byte(sp.size))                             // TODO make this a varint
@@ -36,13 +37,21 @@ func (d *dumper) marshalBinary(b []byte) ([]byte, error) {
 			b[len(b)-1] |= poBytes[0]
 			b = append(b, poBytes[1:]...)
 			bn := poShift(ToBytes(sp.pin), sp.po, d.pos) //, d.pos)
-			log.Trace("marshal shifted", "res", fmt.Sprintf("%x", bn), "src", fmt.Sprintf("%x", ToBytes(sp.pin)), "b", fmt.Sprintf("%x", b))
+			log.Trace("marshal shifted", "res", fmt.Sprintf("%x", bn), "src", fmt.Sprintf("%x", ToBytes(sp.pin)), "b", fmt.Sprintf("%x", b), "lenb", len(b))
 			b[len(b)-1] |= bn[0]
 			if len(bn) > 1 {
 				b = append(b, bn[1:]...)
 			}
 		}
 		d.pos = (d.pos + sp.po) % 8
+		for j := 1; j < sp.size; j++ {
+			var err error
+			log.Trace("nested call", "pot", fmt.Sprintf("%p", sp))
+			b, err = d.marshalBinary(sp, b)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	return b, nil
 }
