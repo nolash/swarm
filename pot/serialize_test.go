@@ -6,8 +6,14 @@ import (
 	"testing"
 
 	"github.com/ethersphere/swarm/log"
+	"github.com/ethersphere/swarm/testutil"
 )
 
+func init() {
+	testutil.Init()
+}
+
+// TestSerializeFindBitByte verifies the bit position within the byte a branch occurs
 func TestSerializeFindBitByte(t *testing.T) {
 	ins := []int{0, 1, 7, 8, 62, 64}
 	outs := []int{0, 0, 0, 1, 7, 8}
@@ -23,6 +29,7 @@ func TestSerializeFindBitByte(t *testing.T) {
 	}
 }
 
+// TestSerializeTailLength verifies the count of bits left over within a byte after branch point
 func TestSerializeTailLength(t *testing.T) {
 	l := tailLength(3, 15)
 	if l != 24-15 {
@@ -45,6 +52,7 @@ func TestSerializeTailLength(t *testing.T) {
 //	}
 //}
 
+// TestSerializePackAddress verifies the result of the component responsible for shifting bits across multiple bytes
 func TestSerializePackAddress(t *testing.T) {
 	b := []byte{0x07, 0x81}
 	c := []byte{0x81}
@@ -72,6 +80,7 @@ func TestSerializePackAddress(t *testing.T) {
 	}
 }
 
+// TestSerializeSingle verifies the result of serializing a pot containing two addresses on and outside byte boundary
 func TestSerializeSingle(t *testing.T) {
 	pof := DefaultPof(255)
 	a := make([]byte, 32)
@@ -85,6 +94,7 @@ func TestSerializeSingle(t *testing.T) {
 		t.Fatal(err)
 	}
 	correct := append(a, byte(pob))
+	log.Trace("pob", "pob", pob)
 	correct = append(correct, byte(1))
 	correct = append(correct, b[10:]...)
 	if !bytes.Equal(s, correct) {
@@ -109,6 +119,7 @@ func TestSerializeSingle(t *testing.T) {
 	}
 }
 
+// TestSerializeBoundary verifies the result of serializing a pot with four addresses at different proximities on byte boundary
 func TestSerializeBoundary(t *testing.T) {
 	pof := DefaultPof(255)
 	a := make([]byte, 32)
@@ -153,6 +164,7 @@ func TestSerializeBoundary(t *testing.T) {
 	}
 }
 
+// TestSerializeDumperPos verifies the bit position stored in the dumper between elements
 func TestSerializeDumperPos(t *testing.T) {
 	pof := DefaultPof(255)
 	a := make([]byte, 32)
@@ -195,6 +207,7 @@ func TestSerializeDumperPos(t *testing.T) {
 
 }
 
+// TestSerializeBoundary verifies the result of serializing a pot with three addresses at different proximities outside byte boundary
 func TestSerializeTwo(t *testing.T) {
 	pof := DefaultPof(255)
 	a := make([]byte, 3)
@@ -236,6 +249,7 @@ func TestSerializeTwo(t *testing.T) {
 	}
 }
 
+// TestSerializeMore verifies the result of serializing a pot with four addresses at different proximities both outside and on byte boundary
 func TestSerializeMore(t *testing.T) {
 	pof := DefaultPof(255)
 	a := make([]byte, 3)
@@ -293,6 +307,7 @@ func TestSerializeMore(t *testing.T) {
 	}
 }
 
+// TestSerializeNested verifies the result of serializing a pot with four addresses both at same and different proximities both outside and on byte boundary
 func TestSerializeNested(t *testing.T) {
 	pof := DefaultPof(255)
 	a := make([]byte, 3)
@@ -351,5 +366,26 @@ func TestSerializeNested(t *testing.T) {
 	if !bytes.Equal(s, correct) {
 		t.Fatalf("serialize nested - zeros after fork; expected %x, got %x", correct, s)
 	}
+}
 
+func TestDeSerializeSingle(t *testing.T) {
+	pof := DefaultPof(255)
+	a := make([]byte, 32)
+	b := make([]byte, 32)
+	b[10] = 0x80
+
+	pob := 10 * 8
+	correct := append(a, byte(pob))
+	correct = append(correct, byte(1))
+	correct = append(correct, b[10:]...)
+
+	dm := newDumper(nil)
+	dm.UnmarshalBinary(correct)
+	if !bytes.Equal(dm.p.Pin().([]byte), a) {
+		t.Fatalf("deserialize single pin; expected %x, got %x", a, dm.p.Pin())
+	}
+	_, _, exist := Remove(dm.p, b, pof)
+	if !exist {
+		t.Fatalf("deserialize single b; not found")
+	}
 }

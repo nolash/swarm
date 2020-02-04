@@ -4,16 +4,13 @@ import (
 	"fmt"
 
 	"github.com/ethersphere/swarm/log"
-	"github.com/ethersphere/swarm/testutil"
 )
 
 type dumper struct {
 	p   *Pot
 	pos int
-}
-
-func init() {
-	testutil.Init()
+	l   int
+	pof Pof
 }
 
 func (d *dumper) MarshalBinary() ([]byte, error) {
@@ -67,8 +64,32 @@ func tailLength(l int, po int) int {
 
 func newDumper(p *Pot) *dumper {
 	return &dumper{
-		p: p,
+		l:   32,
+		p:   p,
+		pof: DefaultPof(255),
 	}
+}
+
+func (d *dumper) UnmarshalBinary(b []byte) error {
+	cursor := 0
+	pin := b[:d.l]
+	d.p = NewPot(pin, 0)
+	cursor += d.l
+	v := make([]byte, d.l)
+	if d.pos == 0 {
+		po := b[cursor]
+		cursor++
+		sz := b[cursor]
+		cursor++
+		poBytes := int((po-1)/8 + 1)
+		remainBytes := d.l - poBytes
+		copy(v, pin[:poBytes])
+		copy(v[poBytes:], b[cursor:cursor+remainBytes])
+		cursor += remainBytes
+		d.p, _, _ = Add(d.p, v, d.pof)
+		_ = sz
+	}
+	return nil
 }
 
 // returns the byte slice left-shifted to the order of po and right-shifted to the order of offset
